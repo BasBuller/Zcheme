@@ -57,7 +57,10 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return std.mem.trimLeft(u8, slice, " ");
 }
 
-fn repl(allocator: Allocator) !void {
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
     var buffer: [128]u8 = undefined;
@@ -72,11 +75,4 @@ fn repl(allocator: Allocator) !void {
             try stdout.print("Failed, please try again.\n", .{});
         }
     }
-}
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    try repl(allocator);
 }
