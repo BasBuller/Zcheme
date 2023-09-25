@@ -25,7 +25,7 @@ fn isDelimiter(char: u8) bool {
     return (std.ascii.isWhitespace(char) or (char == '(') or (char == ')') or (char == '"') or (char == ';'));
 }
 
-fn read(chars: []u8) !Object {
+fn read(chars: []u8, allocator: Allocator) !*Object {
     var varChars = eatWhitespace(chars);
 
     if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
@@ -34,9 +34,21 @@ fn read(chars: []u8) !Object {
             idx += 1;
         }
         var num = try std.fmt.parseInt(i64, varChars[0..idx], 10);
-        return Object{ .fixnum = num };
+        return makeFixnum(num, allocator);
     } else {
         return ParseError.InvalidInput;
+    }
+}
+
+// Evaluate
+fn eval(expr: *Object) *Object {
+    return expr;
+}
+
+// Printing
+fn write(obj: *Object, writer: std.fs.File.Writer) !void {
+    switch (obj.*) {
+        Object.fixnum => |value| try writer.print("{d}\n", .{value}),
     }
 }
 
@@ -45,7 +57,7 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return std.mem.trimLeft(u8, slice, " ");
 }
 
-fn repl() !void {
+fn repl(allocator: Allocator) !void {
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
     var buffer: [128]u8 = undefined;
@@ -54,8 +66,8 @@ fn repl() !void {
     while (true) {
         try stdout.print("> ", .{});
         if (try stdin.readUntilDelimiterOrEof(buffer[0..], '\n')) |input| {
-            var value = read(input);
-            try stdout.print("{any}\n", .{value});
+            var value = try read(input, allocator);
+            try write(value, stdout);
         } else {
             try stdout.print("Failed, please try again.\n", .{});
         }
@@ -64,9 +76,7 @@ fn repl() !void {
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+    const allocator = gpa.allocator();
 
-    _ = try makeFixnum(9, alloc);
-
-    try repl();
+    try repl(allocator);
 }
