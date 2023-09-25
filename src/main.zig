@@ -17,10 +17,32 @@ fn makeFixnum(value: i64, allocator: Allocator) !*Object {
 }
 
 // Parser
+const ParseError = error{
+    InvalidInput,
+};
+
+fn isDelimiter(char: u8) bool {
+    return (std.ascii.isWhitespace(char) or (char == '(') or (char == ')') or (char == '"') or (char == ';'));
+}
+
+fn read(chars: []u8) !Object {
+    var varChars = eatWhitespace(chars);
+
+    if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
+        var idx: usize = 1;
+        while ((idx < varChars.len) and std.ascii.isDigit(varChars[idx])) {
+            idx += 1;
+        }
+        var num = try std.fmt.parseInt(i64, varChars[0..idx], 10);
+        return Object{ .fixnum = num };
+    } else {
+        return ParseError.InvalidInput;
+    }
+}
 
 // REPL
-fn trimWhitespace(slice: []const u8) []const u8 {
-    return std.mem.trim(u8, slice, " ");
+fn eatWhitespace(slice: []const u8) []const u8 {
+    return std.mem.trimLeft(u8, slice, " ");
 }
 
 fn repl() !void {
@@ -31,8 +53,9 @@ fn repl() !void {
     try stdout.print("\nWelcome to ZLisp (which is a Scheme)\n", .{});
     while (true) {
         try stdout.print("> ", .{});
-        if (try stdin.readUntilDelimiterOrEof(buffer[0..], '\n')) |value| {
-            try stdout.print("Mirroring: {s}\n", .{trimWhitespace(value)});
+        if (try stdin.readUntilDelimiterOrEof(buffer[0..], '\n')) |input| {
+            var value = read(input);
+            try stdout.print("{any}\n", .{value});
         } else {
             try stdout.print("Failed, please try again.\n", .{});
         }
@@ -43,7 +66,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
 
-    _ = makeFixnum(9, alloc);
+    _ = try makeFixnum(9, alloc);
 
     try repl();
 }
