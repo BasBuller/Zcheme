@@ -3,16 +3,24 @@ const Allocator = std.mem.Allocator;
 
 // Objects
 const ObjectType = enum {
+    boolean,
     fixnum,
 };
 
 const Object = union(ObjectType) {
     fixnum: i64,
+    boolean: bool,
 };
 
 fn makeFixnum(value: i64, allocator: Allocator) !*Object {
     var res = try allocator.create(Object);
     res.fixnum = value;
+    return res;
+}
+
+fn makeBoolean(value: bool, allocator: Allocator) !*Object {
+    var res = try allocator.create(Object);
+    res.boolean = value;
     return res;
 }
 
@@ -28,7 +36,14 @@ fn isDelimiter(char: u8) bool {
 fn read(chars: []u8, allocator: Allocator) !*Object {
     var varChars = eatWhitespace(chars);
 
-    if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
+    if (varChars[0] == '#') { // Boolean
+        var boolval = switch (varChars[1]) {
+            't' => true,
+            'f' => false,
+            else => return ParseError.InvalidInput,
+        };
+        return makeBoolean(boolval, allocator);
+    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
         var idx: usize = 1;
         while ((idx < varChars.len) and std.ascii.isDigit(varChars[idx])) {
             idx += 1;
@@ -49,6 +64,15 @@ fn eval(expr: *Object) *Object {
 fn write(obj: *Object, writer: std.fs.File.Writer) !void {
     switch (obj.*) {
         Object.fixnum => |value| try writer.print("{d}\n", .{value}),
+        Object.boolean => |value| {
+            var val: u8 = undefined;
+            if (value) {
+                val = 't';
+            } else {
+                val = 'f';
+            }
+            try writer.print("#{c}\n", .{val});
+        },
     }
 }
 
