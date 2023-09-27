@@ -61,7 +61,7 @@ fn read(chars: []u8, allocator: Allocator) !*Object {
         switch (varChars[1]) {
             't' => object.* = .{ .boolean = true },
             'f' => object.* = .{ .boolean = false },
-            // '\\' => object.*= .{ .character = try readCharacter(varChars[2..]) },
+            // '\\' => object.* = .{ .character = try readCharacter(varChars[2..]) },
             else => return ParseError.InvalidInput,
         }
     } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
@@ -114,9 +114,13 @@ pub fn main() !void {
     while (true) {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
-        var value = try read(buffer.items, allocator);
-        try write(value, stdout);
-        try stdout.print("\n", .{});
+        if (read(buffer.items, allocator)) |value| {
+            try write(value, stdout);
+            try stdout.print("\n", .{});
+        } else |err| switch (err) {
+            ParseError.InvalidInput => try stdout.print("Invalid input, please try again\n", .{}),
+            else => try stdout.print("Unrecoverable error, shutting down\n", .{}),
+        }
         buffer.clearRetainingCapacity();
     }
 }
