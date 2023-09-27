@@ -11,6 +11,7 @@ const Object = union(enum) {
 // Parser
 const ParseError = error{
     InvalidInput,
+    BufferEnd,
 };
 
 fn isDelimiter(char: u8) bool {
@@ -26,21 +27,28 @@ fn eatWhitespace(slice: []u8) []u8 {
 }
 
 fn readCharacter(chars: []u8) !u8 {
-    var char = switch (chars[0]) {
-        's' => {
-            switch (chars[1]) {
-                'p' => ' ',
-                else => ParseError.InvalidInput,
-            }
-        },
-        'n' => {
-            switch (chars[1]) {
-                'e' => '\n',
-                else => ParseError.InvalidInput,
-            }
-        },
-        else => ParseError.InvalidInput,
-    };
+    var char: u8 = undefined;
+    if (chars.len > 0) {
+        char = switch (chars[0]) {
+            // 's' => {
+            //     switch (chars[1]) {
+            //         'p' => ' ',
+            //         else => ParseError.InvalidInput,
+            //     }
+            // },
+            // 'n' => {
+            //     switch (chars[1]) {
+            //         'e' => '\n',
+            //         else => ParseError.InvalidInput,
+            //     }
+            // },
+            's' => ' ',
+            'n' => '\n',
+            else => return ParseError.InvalidInput,
+        };
+    } else {
+        return ParseError.BufferEnd;
+    }
     return char;
 }
 
@@ -61,7 +69,10 @@ fn read(chars: []u8, allocator: Allocator) !*Object {
         switch (varChars[1]) {
             't' => object.* = .{ .boolean = true },
             'f' => object.* = .{ .boolean = false },
-            // '\\' => object.* = .{ .character = try readCharacter(varChars[2..]) },
+            '\\' => {
+                var charVal = try readCharacter(varChars[2..]);
+                object.* = .{ .character = charVal };
+            },
             else => return ParseError.InvalidInput,
         }
     } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
