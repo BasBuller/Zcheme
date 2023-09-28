@@ -26,30 +26,38 @@ fn eatWhitespace(slice: []u8) []u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []u8) !u8 {
-    var char: u8 = undefined;
+fn startS(chars: []u8) !u8 {
     if (chars.len > 0) {
-        char = switch (chars[0]) {
-            // 's' => {
-            //     switch (chars[1]) {
-            //         'p' => ' ',
-            //         else => ParseError.InvalidInput,
-            //     }
-            // },
-            // 'n' => {
-            //     switch (chars[1]) {
-            //         'e' => '\n',
-            //         else => ParseError.InvalidInput,
-            //     }
-            // },
-            's' => ' ',
-            'n' => '\n',
+        switch (chars[0]) {
+            'p' => return ' ',
             else => return ParseError.InvalidInput,
-        };
+        }
     } else {
         return ParseError.BufferEnd;
     }
-    return char;
+}
+
+fn startN(chars: []u8) !u8 {
+    if (chars.len > 0) {
+        switch (chars[0]) {
+            'p' => return ' ',
+            else => return ParseError.InvalidInput,
+        }
+    } else {
+        return ParseError.BufferEnd;
+    }
+}
+
+fn readCharacter(chars: []u8) !u8 {
+    if (chars.len > 0) {
+        switch (chars[0]) {
+            's' => return startS(chars[1..]),
+            'n' => return startN(chars[1..]),
+            else => return ParseError.InvalidInput,
+        }
+    } else {
+        return ParseError.BufferEnd;
+    }
 }
 
 fn readFixnum(chars: []u8) !i64 {
