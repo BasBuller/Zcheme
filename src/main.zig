@@ -40,7 +40,7 @@ fn startS(chars: []u8) !u8 {
 fn startN(chars: []u8) !u8 {
     if (chars.len > 0) {
         switch (chars[0]) {
-            'p' => return ' ',
+            'e' => return '\n',
             else => return ParseError.InvalidInput,
         }
     } else {
@@ -138,6 +138,7 @@ pub fn main() !void {
             try stdout.print("\n", .{});
         } else |err| switch (err) {
             ParseError.InvalidInput => try stdout.print("Invalid input, please try again\n", .{}),
+            ParseError.BufferEnd => try stdout.print("Seems like an incomplete command, please try again\n", .{}),
             else => try stdout.print("Unrecoverable error, shutting down\n", .{}),
         }
         buffer.clearRetainingCapacity();
