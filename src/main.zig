@@ -6,6 +6,7 @@ const Object = union(enum) {
     fixnum: i64,
     boolean: bool,
     character: u8,
+    string: []u8,
 };
 
 // Parser
@@ -26,10 +27,18 @@ fn eatWhitespace(slice: []u8) []u8 {
     return slice[idx..];
 }
 
+fn matchExpectedString(slice: []const u8, target: []const u8, output: u8) ParseError!u8 {
+    if (std.mem.eql(u8, slice, target)) {
+        return output;
+    } else {
+        return ParseError.InvalidInput;
+    }
+}
+
 fn startS(chars: []u8) !u8 {
     if (chars.len > 0) {
         switch (chars[0]) {
-            'p' => return ' ',
+            'p' => return matchExpectedString(chars[1..], "ace", ' '),
             else => return ParseError.InvalidInput,
         }
     } else {
@@ -40,7 +49,7 @@ fn startS(chars: []u8) !u8 {
 fn startN(chars: []u8) !u8 {
     if (chars.len > 0) {
         switch (chars[0]) {
-            'e' => return '\n',
+            'e' => return matchExpectedString(chars[1..], "wline", '\n'),
             else => return ParseError.InvalidInput,
         }
     } else {
@@ -69,6 +78,11 @@ fn readFixnum(chars: []u8) !i64 {
     return num;
 }
 
+/// Read characters between closing double quotes, while handling \n and \" espace sequences
+fn readString(chars: []u8) ![]u8 {
+    return chars;
+}
+
 fn read(chars: []u8, allocator: Allocator) !*Object {
     var varChars = eatWhitespace(chars);
     var object = try allocator.create(Object);
@@ -85,6 +99,8 @@ fn read(chars: []u8, allocator: Allocator) !*Object {
         }
     } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
         object.* = .{ .fixnum = try readFixnum(varChars) };
+    } else if (varChars[0] == '"') { // String
+        object.* = .{ .string = try readString(varChars) };
     } else {
         return ParseError.InvalidInput;
     }
@@ -117,6 +133,7 @@ fn write(obj: *Object, writer: std.fs.File.Writer) !void {
                 else => try writer.print("#\\{c}", .{value}),
             }
         },
+        Object.string => |value| try writer.print("\"{s}\"\n", .{value}),
     }
 }
 
