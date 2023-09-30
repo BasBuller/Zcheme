@@ -13,6 +13,7 @@ const Object = union(enum) {
 // Parser
 const ParseError = error{
     InvalidInput,
+    InvalidCharacter,
     BufferEnd,
     UnterminatedString,
 };
@@ -29,59 +30,45 @@ fn eatWhitespace(slice: []u8) []u8 {
     return slice[idx..];
 }
 
-fn matchExpectedString(slice: []const u8, target: []const u8, output: u8) ParseError!u8 {
-    if (std.mem.eql(u8, slice, target)) {
-        return output;
-    } else {
-        return ParseError.InvalidInput;
+fn readCharacter(chars: []u8, object: *Object) ![]u8 {
+    switch (chars[0]) {
+        't' => {
+            object.* = .{ .boolean = true };
+            return chars[1..];
+        },
+        'f' => {
+            object.* = .{ .boolean = false };
+            return chars[1..];
+        },
+        '\\' => {
+            if (chars.len < 6) {
+                return ParseError.BufferEnd;
+            } else if (std.mem.eql(u8, chars[1..6], "space")) {
+                object.* = .{ .character = ' ' };
+                return chars[5..];
+            } else if (std.mem.eql(u8, chars[1..8], "newline")) {
+                object.* = .{ .character = '\n' };
+                return chars[8..];
+            } else {
+                return ParseError.InvalidCharacter;
+            }
+        },
+        else => return ParseError.InvalidInput,
     }
 }
 
-fn startS(chars: []u8) !u8 {
-    if (chars.len > 0) {
-        switch (chars[0]) {
-            'p' => return matchExpectedString(chars[1..], "ace", ' '),
-            else => return ParseError.InvalidInput,
-        }
-    } else {
-        return ParseError.BufferEnd;
-    }
-}
-
-fn startN(chars: []u8) !u8 {
-    if (chars.len > 0) {
-        switch (chars[0]) {
-            'e' => return matchExpectedString(chars[1..], "wline", '\n'),
-            else => return ParseError.InvalidInput,
-        }
-    } else {
-        return ParseError.BufferEnd;
-    }
-}
-
-fn readCharacter(chars: []u8) !u8 {
-    if (chars.len > 0) {
-        switch (chars[0]) {
-            's' => return startS(chars[1..]),
-            'n' => return startN(chars[1..]),
-            else => return ParseError.InvalidInput,
-        }
-    } else {
-        return ParseError.BufferEnd;
-    }
-}
-
-fn readFixnum(chars: []u8) !i64 {
+fn readFixnum(chars: []u8, object: *Object) ![]u8 {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
     }
     var num = try std.fmt.parseInt(i64, chars[0..idx], 10);
-    return num;
+    object.* = .{ .fixnum = num };
+    return chars[idx..];
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []u8) ![]u8 {
+fn readString(chars: []u8, object: *Object) ![]u8 {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -93,37 +80,29 @@ fn readString(chars: []u8) ![]u8 {
         idx += 1;
         if (idx == chars.len) return ParseError.UnterminatedString;
     }
-    return chars[0..idx];
+
+    object.* = .{ .string = chars[0..idx] };
+    return chars[idx..];
 }
 
 fn read(chars: []u8, allocator: Allocator) !*Object {
     var object = try allocator.create(Object);
 
     var varChars = eatWhitespace(chars);
-    while (varChars[0] != '\n') {
-        if (varChars[0] == '#') { // Boolean or character
-            switch (varChars[1]) {
-                't' => object.* = .{ .boolean = true },
-                'f' => object.* = .{ .boolean = false },
-                '\\' => {
-                    var charVal = try readCharacter(varChars[2..]);
-                    object.* = .{ .character = charVal };
-                },
-                else => return ParseError.InvalidInput,
-            }
-        } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
-            object.* = .{ .fixnum = try readFixnum(varChars) };
-        } else if (varChars[0] == '"') { // String
-            object.* = .{ .string = try readString(varChars[1..]) };
-        } else if (varChars[0] == '(') {
-            switch (varChars[1]) {
-                ')' => object.* = .{ .emptyList = true },
-                else => return ParseError.InvalidInput,
-            }
-        } else {
-            return ParseError.InvalidInput;
+    if (varChars[0] == '#') {
+        varChars = try readCharacter(varChars[1..], object);
+    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
+        varChars = try readFixnum(varChars, object);
+    } else if (varChars[0] == '"') {
+        varChars = try readString(varChars[1..], object);
+    } else if (varChars[0] == '(') {
+        switch (varChars[1]) {
+            ')' => object.* = .{ .emptyList = true },
+            else => return ParseError.InvalidInput,
         }
-        varChars = eatWhitespace(varChars);
+        varChars = varChars[2..];
+    } else {
+        return ParseError.InvalidInput;
     }
 
     return object;
@@ -177,8 +156,9 @@ pub fn main() !void {
             try stdout.print("\n", .{});
         } else |err| switch (err) {
             ParseError.InvalidInput => try stdout.print("Invalid input, please try again\n", .{}),
+            ParseError.InvalidCharacter => try stdout.print("Invalid character, please try again\n", .{}),
             ParseError.BufferEnd => try stdout.print("Seems like an incomplete command, please try again\n", .{}),
-            ParseError.UnterminatedString => try stdout.print("Unterminated string, seems you forgot closing quotes.\n", .{}),
+            ParseError.UnterminatedString => try stdout.print("Unterminated string, seems you forgot closing quotesn", .{}),
             else => try stdout.print("Unclear error", .{}),
         }
         buffer.clearRetainingCapacity();
