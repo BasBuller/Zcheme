@@ -85,6 +85,14 @@ fn readString(chars: []const u8, object: *Object) ![]const u8 {
     return chars[idx..];
 }
 
+fn readList(chars: []const u8, object: *Object) ![]const u8 {
+    switch (chars[0]) {
+        ')' => object.* = .{ .emptyList = true },
+        else => return ParseError.InvalidInput,
+    }
+    return chars[1..];
+}
+
 fn read(chars: []const u8, allocator: Allocator) !*Object {
     var object = try allocator.create(Object);
 
@@ -96,11 +104,7 @@ fn read(chars: []const u8, allocator: Allocator) !*Object {
     } else if (varChars[0] == '"') {
         varChars = try readString(varChars[1..], object);
     } else if (varChars[0] == '(') {
-        switch (varChars[1]) {
-            ')' => object.* = .{ .emptyList = true },
-            else => return ParseError.InvalidInput,
-        }
-        varChars = varChars[2..];
+        varChars = try readList(varChars[1..], object);
     } else {
         return ParseError.InvalidInput;
     }
