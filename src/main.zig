@@ -13,6 +13,7 @@ const Object = union(enum) {
 const ParseError = error{
     InvalidInput,
     BufferEnd,
+    UnterminatedString,
 };
 
 fn isDelimiter(char: u8) bool {
@@ -80,7 +81,18 @@ fn readFixnum(chars: []u8) !i64 {
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
 fn readString(chars: []u8) ![]u8 {
-    return chars;
+    var escapeOn: bool = false;
+    var idx: usize = 0;
+    while ((chars[idx] != '"') or escapeOn) {
+        if (chars[idx] == '\\') {
+            escapeOn = true;
+        } else {
+            escapeOn = false;
+        }
+        idx += 1;
+        if (idx == chars.len) return ParseError.UnterminatedString;
+    }
+    return chars[0..idx];
 }
 
 fn read(chars: []u8, allocator: Allocator) !*Object {
@@ -100,7 +112,7 @@ fn read(chars: []u8, allocator: Allocator) !*Object {
     } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
         object.* = .{ .fixnum = try readFixnum(varChars) };
     } else if (varChars[0] == '"') { // String
-        object.* = .{ .string = try readString(varChars) };
+        object.* = .{ .string = try readString(varChars[1..]) };
     } else {
         return ParseError.InvalidInput;
     }
@@ -156,7 +168,8 @@ pub fn main() !void {
         } else |err| switch (err) {
             ParseError.InvalidInput => try stdout.print("Invalid input, please try again\n", .{}),
             ParseError.BufferEnd => try stdout.print("Seems like an incomplete command, please try again\n", .{}),
-            else => try stdout.print("Unrecoverable error, shutting down\n", .{}),
+            ParseError.UnterminatedString => try stdout.print("Unterminated string, seems you forgot closing quotes.\n", .{}),
+            else => try stdout.print("Unclear error", .{}),
         }
         buffer.clearRetainingCapacity();
     }
