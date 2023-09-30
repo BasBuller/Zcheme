@@ -166,8 +166,40 @@ pub fn main() !void {
 }
 
 test "Reading of single objects" {
+    const expect = std.testing.expect;
+    var allocator = std.testing.allocator;
+
+    // Booleans
     const trueTarg = Object{ .boolean = true };
-    const trueSlice: []const u8 = "#t";
-    const trueRead = try read(trueSlice, std.testing.allocator);
-    try std.testing.expect(trueTarg == trueRead.*);
+    const trueRead = try read("#t", allocator);
+    defer allocator.destroy(trueRead);
+    try expect(trueTarg.boolean == trueRead.boolean);
+
+    const falseTarg = Object{ .boolean = false };
+    const falseRead = try read("#f", allocator);
+    defer allocator.destroy(falseRead);
+    try expect(falseTarg.boolean == falseRead.boolean);
+
+    // Fixnums
+    const posNumTarg = Object{ .fixnum = 5 };
+    const posNumRead = try read("5", allocator);
+    defer allocator.destroy(posNumRead);
+    try expect(posNumTarg.fixnum == posNumRead.fixnum);
+
+    const negNumTarg = Object{ .fixnum = -5 };
+    const negNumRead = try read("-5", allocator);
+    defer allocator.destroy(negNumRead);
+    try expect(negNumTarg.fixnum == negNumRead.fixnum);
+
+    // String
+    const stringTarg = Object{ .string = "abcd\\\"efg" };
+    const stringRead = try read("\"abcd\\\"efg\"", allocator);
+    defer allocator.destroy(stringRead);
+    try expect(std.mem.eql(u8, stringTarg.string, stringRead.string));
+
+    // (Empty, for now) list
+    const emptyListTarg = Object{ .emptyList = true };
+    const emptyListRead = try read("()", allocator);
+    defer allocator.destroy(emptyListRead);
+    try expect(emptyListTarg.emptyList == emptyListRead.emptyList);
 }
