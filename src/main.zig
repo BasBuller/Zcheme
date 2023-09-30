@@ -6,7 +6,7 @@ const Object = union(enum) {
     fixnum: i64,
     boolean: bool,
     character: u8,
-    string: []u8,
+    string: []const u8,
     emptyList: bool,
 };
 
@@ -22,7 +22,7 @@ fn isDelimiter(char: u8) bool {
     return (std.ascii.isWhitespace(char) or (char == '(') or (char == ')') or (char == '"') or (char == ';'));
 }
 
-fn eatWhitespace(slice: []u8) []u8 {
+fn eatWhitespace(slice: []const u8) []const u8 {
     var idx: usize = 0;
     while ((idx < slice.len) and (std.ascii.isWhitespace(slice[idx]))) {
         idx += 1;
@@ -30,7 +30,7 @@ fn eatWhitespace(slice: []u8) []u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []u8, object: *Object) ![]u8 {
+fn readCharacter(chars: []const u8, object: *Object) ![]const u8 {
     switch (chars[0]) {
         't' => {
             object.* = .{ .boolean = true };
@@ -57,7 +57,7 @@ fn readCharacter(chars: []u8, object: *Object) ![]u8 {
     }
 }
 
-fn readFixnum(chars: []u8, object: *Object) ![]u8 {
+fn readFixnum(chars: []const u8, object: *Object) ![]const u8 {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
@@ -68,7 +68,7 @@ fn readFixnum(chars: []u8, object: *Object) ![]u8 {
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []u8, object: *Object) ![]u8 {
+fn readString(chars: []const u8, object: *Object) ![]const u8 {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -85,7 +85,7 @@ fn readString(chars: []u8, object: *Object) ![]u8 {
     return chars[idx..];
 }
 
-fn read(chars: []u8, allocator: Allocator) !*Object {
+fn read(chars: []const u8, allocator: Allocator) !*Object {
     var object = try allocator.create(Object);
 
     var varChars = eatWhitespace(chars);
