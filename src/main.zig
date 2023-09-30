@@ -1,8 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const ParseIntError = std.fmt.ParseIntError;
-
 // Objects
 const Object = union(enum) {
     fixnum: i64,
@@ -63,7 +61,7 @@ fn readCharacter(chars: []const u8, object: *Object) ParseError![]const u8 {
     }
 }
 
-fn readFixnum(chars: []const u8, object: *Object) ParseIntError![]const u8 {
+fn readFixnum(chars: []const u8, object: *Object) std.fmt.ParseIntError![]const u8 {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
@@ -189,7 +187,7 @@ pub fn main() !void {
             ParseError.InvalidCharacter => try stdout.print("Invalid character, please try again\n", .{}),
             ParseError.BufferEnd => try stdout.print("Seems like an incomplete command, please try again\n", .{}),
             ParseError.UnterminatedString => try stdout.print("Unterminated string, seems you forgot closing quotesn", .{}),
-            else => try stdout.print("Unclear error", .{}),
+            else => return err,
         }
         buffer.clearRetainingCapacity();
     }
