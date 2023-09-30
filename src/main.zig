@@ -97,30 +97,33 @@ fn readString(chars: []u8) ![]u8 {
 }
 
 fn read(chars: []u8, allocator: Allocator) !*Object {
-    var varChars = eatWhitespace(chars);
     var object = try allocator.create(Object);
 
-    if (varChars[0] == '#') { // Boolean or character
-        switch (varChars[1]) {
-            't' => object.* = .{ .boolean = true },
-            'f' => object.* = .{ .boolean = false },
-            '\\' => {
-                var charVal = try readCharacter(varChars[2..]);
-                object.* = .{ .character = charVal };
-            },
-            else => return ParseError.InvalidInput,
+    var varChars = eatWhitespace(chars);
+    while (varChars[0] != '\n') {
+        if (varChars[0] == '#') { // Boolean or character
+            switch (varChars[1]) {
+                't' => object.* = .{ .boolean = true },
+                'f' => object.* = .{ .boolean = false },
+                '\\' => {
+                    var charVal = try readCharacter(varChars[2..]);
+                    object.* = .{ .character = charVal };
+                },
+                else => return ParseError.InvalidInput,
+            }
+        } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
+            object.* = .{ .fixnum = try readFixnum(varChars) };
+        } else if (varChars[0] == '"') { // String
+            object.* = .{ .string = try readString(varChars[1..]) };
+        } else if (varChars[0] == '(') {
+            switch (varChars[1]) {
+                ')' => object.* = .{ .emptyList = true },
+                else => return ParseError.InvalidInput,
+            }
+        } else {
+            return ParseError.InvalidInput;
         }
-    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) { // Fixnum
-        object.* = .{ .fixnum = try readFixnum(varChars) };
-    } else if (varChars[0] == '"') { // String
-        object.* = .{ .string = try readString(varChars[1..]) };
-    } else if (varChars[0] == '(') {
-        switch (varChars[1]) {
-            ')' => object.* = .{ .emptyList = true },
-            else => return ParseError.InvalidInput,
-        }
-    } else {
-        return ParseError.InvalidInput;
+        varChars = eatWhitespace(varChars);
     }
 
     return object;
