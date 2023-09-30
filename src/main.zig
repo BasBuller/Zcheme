@@ -8,8 +8,9 @@ const Object = union(enum) {
     character: u8,
     string: []const u8,
     emptyList: bool,
-    pair: struct { car: *Object, cdr: *Object },
+    pair: Pair,
 };
+const Pair = struct { car: *Object, cdr: *Object };
 
 // Parser
 const ParseError = error{
@@ -112,12 +113,12 @@ fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ParseError
 
     // First object of pair
     var car = try allocator.create(Object);
-    var varChars = try readObject(chars, object, allocator);
+    var varChars = try readObject(chars, car, allocator);
     varChars = eatWhitespace(varChars);
 
     // Second object of pair
     var cdr = try allocator.create(Object);
-    varChars = try readObject(varChars, object, allocator);
+    varChars = try readObject(varChars, cdr, allocator);
     varChars = eatWhitespace(varChars);
 
     // Closing bracket and create final object
@@ -141,8 +142,8 @@ fn eval(expr: *Object) *Object {
 }
 
 // Printing
-fn write(obj: *Object, writer: std.fs.File.Writer) !void {
-    switch (obj.*) {
+fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
+    switch (object.*) {
         Object.fixnum => |value| try writer.print("{d}", .{value}),
         Object.boolean => |value| {
             var val: u8 = undefined;
@@ -160,10 +161,18 @@ fn write(obj: *Object, writer: std.fs.File.Writer) !void {
                 else => try writer.print("#\\{c}", .{value}),
             }
         },
-        Object.string => |value| try writer.print("\"{s}\"\n", .{value}),
-        Object.emptyList => |_| try writer.print("()\n", .{}),
-        Object.pair => |_| try writer.print("WIP\n", .{}),
+        Object.string => |value| try writer.print("\"{s}\"", .{value}),
+        Object.emptyList => |_| try writer.print("()", .{}),
+        Object.pair => |pair| try writePair(&pair, writer),
     }
+}
+
+fn writePair(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
+    try writer.print("(", .{});
+    try write(pair.car, writer);
+    try writer.print(" ", .{});
+    try write(pair.cdr, writer);
+    try writer.print(")", .{});
 }
 
 // REPL
