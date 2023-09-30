@@ -121,7 +121,7 @@ fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ParseError
     varChars = eatWhitespace(varChars);
 
     // Closing bracket and create final object
-    if (varChars[0] != ')') {
+    if (varChars[0] == ')') {
         object.* = .{ .pair = .{ .car = car, .cdr = cdr } };
         return varChars[1..];
     } else {
@@ -182,12 +182,8 @@ pub fn main() !void {
         if (read(buffer.items, allocator)) |value| {
             try write(value, stdout);
             try stdout.print("\n", .{});
-        } else |err| switch (err) {
-            ParseError.InvalidInput => try stdout.print("Invalid input, please try again\n", .{}),
-            ParseError.InvalidCharacter => try stdout.print("Invalid character, please try again\n", .{}),
-            ParseError.BufferEnd => try stdout.print("Seems like an incomplete command, please try again\n", .{}),
-            ParseError.UnterminatedString => try stdout.print("Unterminated string, seems you forgot closing quotesn", .{}),
-            else => return err,
+        } else |err| {
+            try stdout.print("{any}\n", .{err});
         }
         buffer.clearRetainingCapacity();
     }
