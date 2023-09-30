@@ -116,6 +116,9 @@ fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ParseError
     var varChars = try readObject(chars, car, allocator);
     varChars = eatWhitespace(varChars);
 
+    // Deal with optional dot
+    if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
+
     // Second object of pair
     var cdr = try allocator.create(Object);
     varChars = try readObject(varChars, cdr, allocator);
