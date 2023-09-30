@@ -164,3 +164,10 @@ pub fn main() !void {
         buffer.clearRetainingCapacity();
     }
 }
+
+test "Reading of single objects" {
+    const trueTarg = Object{ .boolean = true };
+    const trueSlice: []const u8 = "#t";
+    const trueRead = try read(trueSlice, std.testing.allocator);
+    try std.testing.expect(trueTarg == trueRead.*);
+}
