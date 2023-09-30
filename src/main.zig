@@ -8,6 +8,7 @@ const Object = union(enum) {
     character: u8,
     string: []const u8,
     emptyList: bool,
+    pair: struct { car: *Object, cdr: *Object },
 };
 
 // Parser
@@ -16,6 +17,7 @@ const ParseError = error{
     InvalidCharacter,
     BufferEnd,
     UnterminatedString,
+    MissingClosingParanthesis,
 };
 
 fn isDelimiter(char: u8) bool {
@@ -85,30 +87,49 @@ fn readString(chars: []const u8, object: *Object) ![]const u8 {
     return chars[idx..];
 }
 
-fn readList(chars: []const u8, object: *Object) ![]const u8 {
-    switch (chars[0]) {
-        ')' => object.* = .{ .emptyList = true },
-        else => return ParseError.InvalidInput,
+fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ![]const u8 {
+    var varChars = eatWhitespace(chars);
+    if (varChars[0] == '#') {
+        return readCharacter(varChars[1..], object);
+    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
+        return readFixnum(varChars, object);
+    } else if (varChars[0] == '"') {
+        return readString(varChars[1..], object);
+    } else if (varChars[0] == '(') {
+        return readPair(varChars[1..], object, allocator);
+    } else {
+        return ParseError.InvalidInput;
     }
-    return chars[1..];
+}
+
+fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ![]const u8 {
+    if (chars[0] == ')') {
+        object.* = .{ .emptyList = true };
+        return chars[1..];
+    }
+
+    // First object of pair
+    var car = try allocator.create(Object);
+    var varChars = try readObject(chars, object, allocator);
+    varChars = eatWhitespace(varChars);
+
+    // Second object of pair
+    var cdr = try allocator.create(Object);
+    varChars = try readObject(varChars, object, allocator);
+    varChars = eatWhitespace(varChars);
+
+    // Closing bracket and create final object
+    if (varChars[0] != ')') {
+        object.* = .{ .pair = .{ .car = car, .cdr = cdr } };
+        return varChars[1..];
+    } else {
+        return ParseError.MissingClosingParanthesis;
+    }
 }
 
 fn read(chars: []const u8, allocator: Allocator) !*Object {
     var object = try allocator.create(Object);
-
-    var varChars = eatWhitespace(chars);
-    if (varChars[0] == '#') {
-        varChars = try readCharacter(varChars[1..], object);
-    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
-        varChars = try readFixnum(varChars, object);
-    } else if (varChars[0] == '"') {
-        varChars = try readString(varChars[1..], object);
-    } else if (varChars[0] == '(') {
-        varChars = try readList(varChars[1..], object);
-    } else {
-        return ParseError.InvalidInput;
-    }
-
+    _ = try readObject(chars, object, allocator);
     return object;
 }
 
@@ -139,6 +160,7 @@ fn write(obj: *Object, writer: std.fs.File.Writer) !void {
         },
         Object.string => |value| try writer.print("\"{s}\"\n", .{value}),
         Object.emptyList => |_| try writer.print("()\n", .{}),
+        Object.pair => |_| try writer.print("WIP\n", .{}),
     }
 }
 
