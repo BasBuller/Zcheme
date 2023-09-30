@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const ParseIntError = std.fmt.ParseIntError;
+
 // Objects
 const Object = union(enum) {
     fixnum: i64,
@@ -14,10 +16,12 @@ const Object = union(enum) {
 // Parser
 const ParseError = error{
     InvalidInput,
-    InvalidCharacter,
     BufferEnd,
     UnterminatedString,
     MissingClosingParanthesis,
+    InvalidCharacter,
+    Overflow,
+    OutOfMemory,
 };
 
 fn isDelimiter(char: u8) bool {
@@ -32,7 +36,7 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []const u8, object: *Object) ![]const u8 {
+fn readCharacter(chars: []const u8, object: *Object) ParseError![]const u8 {
     switch (chars[0]) {
         't' => {
             object.* = .{ .boolean = true };
@@ -59,7 +63,7 @@ fn readCharacter(chars: []const u8, object: *Object) ![]const u8 {
     }
 }
 
-fn readFixnum(chars: []const u8, object: *Object) ![]const u8 {
+fn readFixnum(chars: []const u8, object: *Object) ParseIntError![]const u8 {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
@@ -70,7 +74,7 @@ fn readFixnum(chars: []const u8, object: *Object) ![]const u8 {
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []const u8, object: *Object) ![]const u8 {
+fn readString(chars: []const u8, object: *Object) ParseError![]const u8 {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -87,7 +91,7 @@ fn readString(chars: []const u8, object: *Object) ![]const u8 {
     return chars[idx..];
 }
 
-fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ![]const u8 {
+fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
         return readCharacter(varChars[1..], object);
@@ -102,7 +106,7 @@ fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ![]const
     }
 }
 
-fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ![]const u8 {
+fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
     if (chars[0] == ')') {
         object.* = .{ .emptyList = true };
         return chars[1..];
