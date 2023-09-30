@@ -7,6 +7,7 @@ const Object = union(enum) {
     boolean: bool,
     character: u8,
     string: []u8,
+    emptyList: bool,
 };
 
 // Parser
@@ -113,6 +114,11 @@ fn read(chars: []u8, allocator: Allocator) !*Object {
         object.* = .{ .fixnum = try readFixnum(varChars) };
     } else if (varChars[0] == '"') { // String
         object.* = .{ .string = try readString(varChars[1..]) };
+    } else if (varChars[0] == '(') {
+        switch (varChars[1]) {
+            ')' => object.* = .{ .emptyList = true },
+            else => return ParseError.InvalidInput,
+        }
     } else {
         return ParseError.InvalidInput;
     }
@@ -146,6 +152,7 @@ fn write(obj: *Object, writer: std.fs.File.Writer) !void {
             }
         },
         Object.string => |value| try writer.print("\"{s}\"\n", .{value}),
+        Object.emptyList => |_| try writer.print("()\n", .{}),
     }
 }
 
