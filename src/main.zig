@@ -342,3 +342,17 @@ test "Lists" {
     try expect(emptyPairTarg.pair.car.fixnum == emptyPairRead.pair.car.fixnum);
     try expect(emptyPairTarg.pair.cdr.emptyList == emptyPairRead.pair.cdr.emptyList);
 }
+
+test "Symbols" {
+    const expect = std.testing.expect;
+    var allocator = std.testing.allocator;
+    var state = State.init(allocator);
+    defer state.deinit();
+
+    var obj0 = try read("abc", &state);
+    var obj1 = try read("abc", &state);
+    try expect(obj0 == obj1);
+
+    var obj2 = try read("abcd", &state);
+    try expect(obj0 != obj2);
+}
