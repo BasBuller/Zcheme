@@ -201,11 +201,10 @@ pub fn main() !void {
     }
 }
 
-test "Reading of single objects" {
+test "Booleans" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
 
-    // Booleans
     const trueTarg = Object{ .boolean = true };
     const trueRead = try read("#t", allocator);
     defer allocator.destroy(trueRead);
@@ -215,8 +214,12 @@ test "Reading of single objects" {
     const falseRead = try read("#f", allocator);
     defer allocator.destroy(falseRead);
     try expect(falseTarg.boolean == falseRead.boolean);
+}
 
-    // Fixnums
+test "Fixnums" {
+    const expect = std.testing.expect;
+    var allocator = std.testing.allocator;
+
     const posNumTarg = Object{ .fixnum = 5 };
     const posNumRead = try read("5", allocator);
     defer allocator.destroy(posNumRead);
@@ -226,16 +229,36 @@ test "Reading of single objects" {
     const negNumRead = try read("-5", allocator);
     defer allocator.destroy(negNumRead);
     try expect(negNumTarg.fixnum == negNumRead.fixnum);
+}
 
-    // String
+test "Strings" {
+    const expect = std.testing.expect;
+    var allocator = std.testing.allocator;
+
     const stringTarg = Object{ .string = "abcd\\\"efg" };
     const stringRead = try read("\"abcd\\\"efg\"", allocator);
     defer allocator.destroy(stringRead);
     try expect(std.mem.eql(u8, stringTarg.string, stringRead.string));
+}
+
+test "Lists" {
+    const expect = std.testing.expect;
+    var allocator = std.testing.allocator;
 
     // (Empty, for now) list
     const emptyListTarg = Object{ .emptyList = true };
     const emptyListRead = try read("()", allocator);
     defer allocator.destroy(emptyListRead);
     try expect(emptyListTarg.emptyList == emptyListRead.emptyList);
+
+    // Pairs
+    var car = Object{ .fixnum = 1 };
+    var cdr = Object{ .fixnum = 2 };
+    const basicPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
+    const basicPairRead = try read("(1 2)", allocator);
+    defer allocator.destroy(basicPairRead);
+    defer allocator.destroy(basicPairRead.pair.car);
+    defer allocator.destroy(basicPairRead.pair.cdr);
+    try expect(basicPairTarg.pair.car.fixnum == basicPairRead.pair.car.fixnum);
+    try expect(basicPairTarg.pair.cdr.fixnum == basicPairRead.pair.cdr.fixnum);
 }
