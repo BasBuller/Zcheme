@@ -9,6 +9,7 @@ const Object = union(enum) {
     string: []const u8,
     emptyList: bool,
     pair: Pair,
+    symbol: []const u8,
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
@@ -90,6 +91,16 @@ fn readString(chars: []const u8, object: *Object) ParseError![]const u8 {
     return chars[idx..];
 }
 
+fn readSymbol(chars: []const u8, object: *Object) ParseError![]const u8 {
+    var idx: usize = 0;
+    while ((idx < chars.len) and (std.ascii.isDigit(chars[idx]) or std.ascii.isAlphabetic(chars[idx]) or (chars[idx] == '-'))) {
+        idx += 1;
+    }
+    if ((idx < chars.len) and (chars[idx] != ' ')) return ParseError.InvalidInput;
+    object.* = Object{ .symbol = chars[0..idx] };
+    return chars[idx..];
+}
+
 fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
@@ -100,6 +111,8 @@ fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ParseErr
         return readString(varChars[1..], object);
     } else if (varChars[0] == '(') {
         return readPair(varChars[1..], object, allocator);
+    } else if (std.ascii.isAlphabetic(varChars[0])) {
+        return readSymbol(varChars, object);
     } else {
         return ParseError.InvalidInput;
     }
@@ -165,6 +178,7 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
             }
         },
         Object.string => |value| try writer.print("\"{s}\"", .{value}),
+        Object.symbol => |value| try writer.print("{s}", .{value}),
         Object.emptyList => |_| try writer.print("()", .{}),
         Object.pair => |pair| try writePair(&pair, writer),
     }
