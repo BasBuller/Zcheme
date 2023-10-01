@@ -13,6 +13,29 @@ const Object = union(enum) {
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
+// State management
+const SymbolLut = std.StringHashMap(Object);
+const State = struct {
+    allocator: Allocator,
+    symbolLut: SymbolLut,
+
+    const Self = @This();
+
+    fn init(allocator: Allocator) Self {
+        var lut = SymbolLut.init(allocator);
+        return .{ .allocator = allocator, .symbolLut = lut };
+    }
+
+    fn deinit(self: *Self) void {
+        self.symbolLut.deinit();
+    }
+};
+
+const ParseResult = struct {
+    object: *Object,
+    remainderString: []const u8,
+};
+
 // Parser
 const ParseError = error{
     InvalidInput,
@@ -41,45 +64,50 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []const u8, object: *Object) ParseError![]const u8 {
+fn readCharacter(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
+    var object = try allocator.create(Object);
+    var resString: []const u8 = undefined;
     switch (chars[0]) {
         't' => {
             object.* = .{ .boolean = true };
-            return chars[1..];
+            resString = chars[1..];
         },
         'f' => {
             object.* = .{ .boolean = false };
-            return chars[1..];
+            resString = chars[1..];
         },
         '\\' => {
             if (chars.len < 6) {
                 return ParseError.BufferEnd;
             } else if (std.mem.eql(u8, chars[1..6], "space")) {
                 object.* = .{ .character = ' ' };
-                return chars[5..];
+                resString = chars[5..];
             } else if (std.mem.eql(u8, chars[1..8], "newline")) {
                 object.* = .{ .character = '\n' };
-                return chars[8..];
+                resString = chars[8..];
             } else {
                 return ParseError.InvalidCharacter;
             }
         },
         else => return ParseError.InvalidInput,
     }
+    return ParseResult{ .object = object, .remainderString = resString };
 }
 
-fn readFixnum(chars: []const u8, object: *Object) std.fmt.ParseIntError![]const u8 {
+fn readFixnum(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
     }
     var num = try std.fmt.parseInt(i64, chars[0..idx], 10);
+
+    var object = try allocator.create(Object);
     object.* = .{ .fixnum = num };
-    return chars[idx..];
+    return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []const u8, object: *Object) ParseError![]const u8 {
+fn readString(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -92,76 +120,82 @@ fn readString(chars: []const u8, object: *Object) ParseError![]const u8 {
         if (idx == chars.len) return ParseError.UnterminatedString;
     }
 
+    var object = try allocator.create(Object);
     object.* = .{ .string = chars[0..idx] };
-    return chars[idx..];
+    return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
 
-fn readSymbol(chars: []const u8, object: *Object) ParseError![]const u8 {
+fn readSymbol(chars: []const u8, state: *State) ParseError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and
         (isInitial(chars[idx]) or std.ascii.isDigit(chars[idx]) or (chars[idx] == '+') or (chars[idx] == '-')))
     {
         idx += 1;
     }
+
     if ((idx == chars.len) or
         ((idx < chars.len) and isDelimiter(chars[idx])))
     {
-        object.* = Object{ .symbol = chars[0..idx] };
-        return chars[idx..];
+        const symbol = chars[0..idx];
+        var lutRes = try state.symbolLut.getOrPut(symbol);
+        if (!lutRes.found_existing) {
+            lutRes.value_ptr.* = Object{ .symbol = symbol };
+        }
+        return ParseResult{ .object = lutRes.value_ptr, .remainderString = chars[idx..] };
     } else {
         return ParseError.InvalidSymbol;
     }
 }
 
-fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
+fn readObject(chars: []const u8, state: *State) ParseError!ParseResult {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
-        return readCharacter(varChars[1..], object);
+        return readCharacter(varChars[1..], state.allocator);
     } else if (((varChars.len > 1) and (varChars[0] == '-') and std.ascii.isDigit(varChars[1])) or std.ascii.isDigit(varChars[0])) {
-        return readFixnum(varChars, object);
+        return readFixnum(varChars, state.allocator);
     } else if (varChars[0] == '"') {
-        return readString(varChars[1..], object);
-    } else if (varChars[0] == '(') {
-        return readPair(varChars[1..], object, allocator);
+        return readString(varChars[1..], state.allocator);
     } else if (isInitial(varChars[0]) or ((varChars.len > 1) and ((varChars[0] == '+') or (varChars[0] == '-')) and isDelimiter(varChars[1]))) {
-        return readSymbol(varChars, object);
+        return readSymbol(varChars, state);
+    } else if (varChars[0] == '(') {
+        return readPair(varChars[1..], state);
     } else {
         return ParseError.InvalidInput;
     }
 }
 
-fn readPair(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
+fn readPair(chars: []const u8, state: *State) ParseError!ParseResult {
+    var object = try state.allocator.create(Object);
     if (chars[0] == ')') {
         object.* = .{ .emptyList = true };
-        return chars[1..];
+        return ParseResult{ .object = object, .remainderString = chars[1..] };
     }
 
     // First object of pair
-    var car = try allocator.create(Object);
-    var varChars = try readObject(chars, car, allocator);
-    varChars = eatWhitespace(varChars);
+    var parseRes = try readObject(chars, state);
+    var car = parseRes.object;
+    var varChars = eatWhitespace(parseRes.remainderString);
 
     // Deal with optional dot
     if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
 
     // Second object of pair
-    var cdr = try allocator.create(Object);
-    varChars = try readObject(varChars, cdr, allocator);
-    varChars = eatWhitespace(varChars);
+    parseRes = try readObject(varChars, state);
+    var cdr = parseRes.object;
+    varChars = eatWhitespace(parseRes.remainderString);
 
     // Closing bracket and create final object
     if (varChars[0] == ')') {
         object.* = .{ .pair = .{ .car = car, .cdr = cdr } };
-        return varChars[1..];
+        return ParseResult{ .object = object, .remainderString = varChars[1..] };
     } else {
         return ParseError.MissingClosingParanthesis;
     }
 }
 
-fn read(chars: []const u8, allocator: Allocator) !*Object {
-    var object = try allocator.create(Object);
-    _ = try readObject(chars, object, allocator);
-    return object;
+fn read(chars: []const u8, state: *State) !*Object {
+    var parseRes = try readObject(chars, state);
+    return parseRes.object;
 }
 
 // Evaluate
@@ -208,6 +242,7 @@ fn writePair(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.E
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    var state = State.init(allocator);
 
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
@@ -217,7 +252,7 @@ pub fn main() !void {
     while (true) {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
-        if (read(buffer.items, allocator)) |value| {
+        if (read(buffer.items, &state)) |value| {
             try write(value, stdout);
             try stdout.print("\n", .{});
         } else |err| {
@@ -230,14 +265,16 @@ pub fn main() !void {
 test "Booleans" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
+    var state = State.init(allocator);
+    defer state.deinit();
 
     const trueTarg = Object{ .boolean = true };
-    const trueRead = try read("#t", allocator);
+    const trueRead = try read("#t", &state);
     defer allocator.destroy(trueRead);
     try expect(trueTarg.boolean == trueRead.boolean);
 
     const falseTarg = Object{ .boolean = false };
-    const falseRead = try read("#f", allocator);
+    const falseRead = try read("#f", &state);
     defer allocator.destroy(falseRead);
     try expect(falseTarg.boolean == falseRead.boolean);
 }
@@ -245,14 +282,16 @@ test "Booleans" {
 test "Fixnums" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
+    var state = State.init(allocator);
+    defer state.deinit();
 
     const posNumTarg = Object{ .fixnum = 5 };
-    const posNumRead = try read("5", allocator);
+    const posNumRead = try read("5", &state);
     defer allocator.destroy(posNumRead);
     try expect(posNumTarg.fixnum == posNumRead.fixnum);
 
     const negNumTarg = Object{ .fixnum = -5 };
-    const negNumRead = try read("-5", allocator);
+    const negNumRead = try read("-5", &state);
     defer allocator.destroy(negNumRead);
     try expect(negNumTarg.fixnum == negNumRead.fixnum);
 }
@@ -260,9 +299,11 @@ test "Fixnums" {
 test "Strings" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
+    var state = State.init(allocator);
+    defer state.deinit();
 
     const stringTarg = Object{ .string = "abcd\\\"efg" };
-    const stringRead = try read("\"abcd\\\"efg\"", allocator);
+    const stringRead = try read("\"abcd\\\"efg\"", &state);
     defer allocator.destroy(stringRead);
     try expect(std.mem.eql(u8, stringTarg.string, stringRead.string));
 }
@@ -270,10 +311,12 @@ test "Strings" {
 test "Lists" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
+    var state = State.init(allocator);
+    defer state.deinit();
 
     // (Empty, for now) list
     const emptyListTarg = Object{ .emptyList = true };
-    const emptyListRead = try read("()", allocator);
+    const emptyListRead = try read("()", &state);
     defer allocator.destroy(emptyListRead);
     try expect(emptyListTarg.emptyList == emptyListRead.emptyList);
 
@@ -281,7 +324,7 @@ test "Lists" {
     var car = Object{ .fixnum = 1 };
     var cdr = Object{ .fixnum = 2 };
     const basicPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
-    const basicPairRead = try read("(1 2)", allocator);
+    const basicPairRead = try read("(1 2)", &state);
     defer allocator.destroy(basicPairRead);
     defer allocator.destroy(basicPairRead.pair.car);
     defer allocator.destroy(basicPairRead.pair.cdr);
@@ -292,7 +335,7 @@ test "Lists" {
     car = Object{ .fixnum = 1 };
     cdr = Object{ .emptyList = true };
     const emptyPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
-    const emptyPairRead = try read("(1 ())", allocator);
+    const emptyPairRead = try read("(1 ())", &state);
     defer allocator.destroy(emptyPairRead);
     defer allocator.destroy(emptyPairRead.pair.car);
     defer allocator.destroy(emptyPairRead.pair.cdr);
