@@ -22,10 +22,15 @@ const ParseError = error{
     InvalidCharacter,
     Overflow,
     OutOfMemory,
+    InvalidSymbol,
 };
 
 fn isDelimiter(char: u8) bool {
     return (std.ascii.isWhitespace(char) or (char == '(') or (char == ')') or (char == '"') or (char == ';'));
+}
+
+fn isInitial(char: u8) bool {
+    return (std.ascii.isAlphabetic(char) or (char == '*') or (char == '/') or (char == '<') or (char == '>') or (char == '=') or (char == '?') or (char == '!'));
 }
 
 fn eatWhitespace(slice: []const u8) []const u8 {
@@ -92,26 +97,33 @@ fn readString(chars: []const u8, object: *Object) ParseError![]const u8 {
 }
 
 fn readSymbol(chars: []const u8, object: *Object) ParseError![]const u8 {
-    var idx: usize = 0;
-    while ((idx < chars.len) and (std.ascii.isDigit(chars[idx]) or std.ascii.isAlphabetic(chars[idx]) or (chars[idx] == '-'))) {
+    var idx: usize = 1;
+    while ((idx < chars.len) and
+        (isInitial(chars[idx]) or std.ascii.isDigit(chars[idx]) or (chars[idx] == '+') or (chars[idx] == '-')))
+    {
         idx += 1;
     }
-    if ((idx < chars.len) and (chars[idx] != ' ')) return ParseError.InvalidInput;
-    object.* = Object{ .symbol = chars[0..idx] };
-    return chars[idx..];
+    if ((idx == chars.len) or
+        ((idx < chars.len) and isDelimiter(chars[idx])))
+    {
+        object.* = Object{ .symbol = chars[0..idx] };
+        return chars[idx..];
+    } else {
+        return ParseError.InvalidSymbol;
+    }
 }
 
 fn readObject(chars: []const u8, object: *Object, allocator: Allocator) ParseError![]const u8 {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
         return readCharacter(varChars[1..], object);
-    } else if ((varChars[0] == '-') or std.ascii.isDigit(varChars[0])) {
+    } else if (((varChars.len > 1) and (varChars[0] == '-') and std.ascii.isDigit(varChars[1])) or std.ascii.isDigit(varChars[0])) {
         return readFixnum(varChars, object);
     } else if (varChars[0] == '"') {
         return readString(varChars[1..], object);
     } else if (varChars[0] == '(') {
         return readPair(varChars[1..], object, allocator);
-    } else if (std.ascii.isAlphabetic(varChars[0])) {
+    } else if (isInitial(varChars[0]) or ((varChars.len > 1) and ((varChars[0] == '+') or (varChars[0] == '-')) and isDelimiter(varChars[1]))) {
         return readSymbol(varChars, object);
     } else {
         return ParseError.InvalidInput;
