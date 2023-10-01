@@ -251,7 +251,7 @@ test "Lists" {
     defer allocator.destroy(emptyListRead);
     try expect(emptyListTarg.emptyList == emptyListRead.emptyList);
 
-    // Pairs
+    // Simple pair
     var car = Object{ .fixnum = 1 };
     var cdr = Object{ .fixnum = 2 };
     const basicPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
@@ -261,4 +261,15 @@ test "Lists" {
     defer allocator.destroy(basicPairRead.pair.cdr);
     try expect(basicPairTarg.pair.car.fixnum == basicPairRead.pair.car.fixnum);
     try expect(basicPairTarg.pair.cdr.fixnum == basicPairRead.pair.cdr.fixnum);
+
+    // Pair with empty list as second item
+    car = Object{ .fixnum = 1 };
+    cdr = Object{ .emptyList = true };
+    const emptyPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
+    const emptyPairRead = try read("(1 ())", allocator);
+    defer allocator.destroy(emptyPairRead);
+    defer allocator.destroy(emptyPairRead.pair.car);
+    defer allocator.destroy(emptyPairRead.pair.cdr);
+    try expect(emptyPairTarg.pair.car.fixnum == emptyPairRead.pair.car.fixnum);
+    try expect(emptyPairTarg.pair.cdr.emptyList == emptyPairRead.pair.cdr.emptyList);
 }
