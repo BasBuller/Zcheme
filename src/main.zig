@@ -266,6 +266,20 @@ fn eval(expr: *Object, state: *State) EvalError!*Object {
 }
 
 // Printing
+fn recurseList(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
+    try write(pair.car, writer);
+    if (@as(ObjectType, pair.cdr.*) == ObjectType.pair) {
+        try writer.print(" ", .{});
+        try recurseList(&pair.cdr.pair, writer);
+    }
+}
+
+fn writePair(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
+    try writer.print("(", .{});
+    try recurseList(pair, writer);
+    try writer.print(")", .{});
+}
+
 fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
     switch (object.*) {
         Object.fixnum => |value| try writer.print("{d}", .{value}),
@@ -290,14 +304,6 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
         Object.emptyList => |_| try writer.print("()", .{}),
         Object.pair => |pair| try writePair(&pair, writer),
     }
-}
-
-fn writePair(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
-    try writer.print("(", .{});
-    try write(pair.car, writer);
-    try writer.print(" ", .{});
-    try write(pair.cdr, writer);
-    try writer.print(")", .{});
 }
 
 // REPL
