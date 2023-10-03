@@ -242,23 +242,22 @@ fn isSelfEvaluating(object: *Object) bool {
 
 fn isTaggedList(expression: *Object, tag: *Object) bool {
     if (@as(ObjectType, expression.*) == ObjectType.pair) {
-        const carIsSymbol = @as(ObjectType.symbol, expression.pair.car.*) == ObjectType.symbol;
-        return (carIsSymbol and tag);
+        const carIsSymbol = @as(ObjectType, expression.pair.car.*) == ObjectType.symbol;
+        return (carIsSymbol and (expression.pair.car == tag));
     } else {
         return false;
     }
 }
 
-fn isQuoted(expression: *Object, state: *State) bool {
-    const quote = state.getOrPutSymbol("quote");
-    return isTaggedList(expression, quote, state);
+fn isQuoted(expression: *Object, state: *State) !bool {
+    const quote = try state.getOrPutSymbol("quote");
+    return isTaggedList(expression, quote);
 }
 
-fn eval(expr: *Object, state: *State) EvalError!*Object {
-    _ = state;
+fn eval(expr: *Object, state: *State) !*Object {
     if (isSelfEvaluating(expr)) {
         return expr;
-    } else if (isQuoted(expr)) {
+    } else if (try isQuoted(expr, state)) {
         return expr.pair.cdr.pair.car;
     } else {
         return EvalError.InvalidExpressionType;
@@ -321,7 +320,8 @@ pub fn main() !void {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            try write(value, stdout);
+            const res = try eval(value, &state);
+            try write(res, stdout);
             try stdout.print("\n", .{});
         } else |err| {
             try stdout.print("{any}\n", .{err});
