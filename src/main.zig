@@ -320,9 +320,12 @@ pub fn main() !void {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            const res = try eval(value, &state);
-            try write(res, stdout);
-            try stdout.print("\n", .{});
+            if (eval(value, &state)) |res| {
+                try write(res, stdout);
+                try stdout.print("\n", .{});
+            } else |err| {
+                try stdout.print("{any}\n", .{err});
+            }
         } else |err| {
             try stdout.print("{any}\n", .{err});
         }
