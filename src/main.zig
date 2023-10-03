@@ -188,9 +188,12 @@ fn readPair(chars: []const u8, state: *State) ParseError!ParseResult {
 
     // Deal with whitespace and optional dot
     var varChars = eatWhitespace(parseRes.remainderString);
-    if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
+    if (varChars.len == 0) {
+        return ParseError.MissingClosingParanthesis;
+    }
 
     var cdr: *Object = undefined;
+    if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
     if (varChars.len == 0) {
         return ParseError.MissingClosingParanthesis;
     } else if (varChars[0] == ')') {
@@ -324,10 +327,10 @@ pub fn main() !void {
                 try write(res, stdout);
                 try stdout.print("\n", .{});
             } else |err| {
-                try stdout.print("{any}\n", .{err});
+                try stdout.print("Evaluation error: \"{any}\"\n", .{err});
             }
         } else |err| {
-            try stdout.print("{any}\n", .{err});
+            try stdout.print("Parsing error: \"{any}\"\n", .{err});
         }
         buffer.clearRetainingCapacity();
     }
