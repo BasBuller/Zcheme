@@ -2,7 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 // Objects
-const Object = union(enum) {
+const ObjectType = enum { fixnum, boolean, character, string, emptyList, pair, symbol };
+const Object = union(ObjectType) {
     fixnum: i64,
     boolean: bool,
     character: u8,
@@ -10,6 +11,20 @@ const Object = union(enum) {
     emptyList: bool,
     pair: Pair,
     symbol: []const u8,
+
+    const Self = @This();
+
+    fn createEmptyList(allocator: Allocator) ParseError!*Object {
+        const empty = try allocator.create(Object);
+        empty.* = Object{ .emptyList = true };
+        return empty;
+    }
+
+    fn createPair(car: *Object, cdr: *Object, allocator: Allocator) ParseError!*Object {
+        const pair = try allocator.create(Object);
+        pair.* = Object{ .pair = Pair{ .car = car, .cdr = cdr } };
+        return pair;
+    }
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
@@ -28,6 +43,14 @@ const State = struct {
 
     fn deinit(self: *Self) void {
         self.symbolLut.deinit();
+    }
+
+    fn getOrPutSymbol(self: *Self, symbolName: []const u8) ParseError!*Object {
+        var lutRes = try self.symbolLut.getOrPut(symbolName);
+        if (!lutRes.found_existing) {
+            lutRes.value_ptr.* = Object{ .symbol = symbolName };
+        }
+        return lutRes.value_ptr;
     }
 };
 
@@ -136,15 +159,51 @@ fn readSymbol(chars: []const u8, state: *State) ParseError!ParseResult {
     if ((idx == chars.len) or
         ((idx < chars.len) and isDelimiter(chars[idx])))
     {
-        const symbol = chars[0..idx];
-        var lutRes = try state.symbolLut.getOrPut(symbol);
-        if (!lutRes.found_existing) {
-            lutRes.value_ptr.* = Object{ .symbol = symbol };
-        }
-        return ParseResult{ .object = lutRes.value_ptr, .remainderString = chars[idx..] };
+        const object = try state.getOrPutSymbol(chars[0..idx]);
+        return ParseResult{ .object = object, .remainderString = chars[idx..] };
     } else {
         return ParseError.InvalidSymbol;
     }
+}
+
+fn readQuotedList(chars: []const u8, state: *State) ParseError!ParseResult {
+    const quote = try state.getOrPutSymbol("quote");
+    const objRes = try readObject(chars, state);
+    const emptyList = try Object.createEmptyList(state.allocator);
+    const quotedObject = try Object.createPair(objRes.object, emptyList, state.allocator);
+    const resObject = try Object.createPair(quote, quotedObject, state.allocator);
+    const res = ParseResult{ .object = resObject, .remainderString = objRes.remainderString };
+    return res;
+}
+
+fn readPair(chars: []const u8, state: *State) ParseError!ParseResult {
+    if (chars[0] == ')') {
+        const object = try Object.createEmptyList(state.allocator);
+        return ParseResult{ .object = object, .remainderString = chars[1..] };
+    }
+
+    // First object of pair
+    var parseRes = try readObject(chars, state);
+    var car = parseRes.object;
+
+    // Deal with whitespace and optional dot
+    var varChars = eatWhitespace(parseRes.remainderString);
+    if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
+
+    var cdr: *Object = undefined;
+    if (varChars.len == 0) {
+        return ParseError.MissingClosingParanthesis;
+    } else if (varChars[0] == ')') {
+        cdr = try Object.createEmptyList(state.allocator);
+        varChars = varChars[1..];
+    } else {
+        const cdrRes = try readPair(varChars, state);
+        cdr = cdrRes.object;
+        varChars = cdrRes.remainderString;
+    }
+
+    const object = try Object.createPair(car, cdr, state.allocator);
+    return ParseResult{ .object = object, .remainderString = varChars };
 }
 
 fn readObject(chars: []const u8, state: *State) ParseError!ParseResult {
@@ -159,37 +218,10 @@ fn readObject(chars: []const u8, state: *State) ParseError!ParseResult {
         return readSymbol(varChars, state);
     } else if (varChars[0] == '(') {
         return readPair(varChars[1..], state);
+    } else if (varChars[0] == '\'') {
+        return readQuotedList(varChars[1..], state);
     } else {
         return ParseError.InvalidInput;
-    }
-}
-
-fn readPair(chars: []const u8, state: *State) ParseError!ParseResult {
-    var object = try state.allocator.create(Object);
-    if (chars[0] == ')') {
-        object.* = .{ .emptyList = true };
-        return ParseResult{ .object = object, .remainderString = chars[1..] };
-    }
-
-    // First object of pair
-    var parseRes = try readObject(chars, state);
-    var car = parseRes.object;
-    var varChars = eatWhitespace(parseRes.remainderString);
-
-    // Deal with optional dot
-    if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
-
-    // Second object of pair
-    parseRes = try readObject(varChars, state);
-    var cdr = parseRes.object;
-    varChars = eatWhitespace(parseRes.remainderString);
-
-    // Closing bracket and create final object
-    if (varChars[0] == ')') {
-        object.* = .{ .pair = .{ .car = car, .cdr = cdr } };
-        return ParseResult{ .object = object, .remainderString = varChars[1..] };
-    } else {
-        return ParseError.MissingClosingParanthesis;
     }
 }
 
@@ -199,8 +231,38 @@ fn read(chars: []const u8, state: *State) !*Object {
 }
 
 // Evaluate
-fn eval(expr: *Object) *Object {
-    return expr;
+const EvalError = error{
+    InvalidExpressionType,
+};
+
+fn isSelfEvaluating(object: *Object) bool {
+    const objType = @as(ObjectType, object.*);
+    return (objType == ObjectType.boolean) or (objType == ObjectType.fixnum) or (objType == ObjectType.character) or (objType == ObjectType.string);
+}
+
+fn isTaggedList(expression: *Object, tag: *Object) bool {
+    if (@as(ObjectType, expression.*) == ObjectType.pair) {
+        const carIsSymbol = @as(ObjectType.symbol, expression.pair.car.*) == ObjectType.symbol;
+        return (carIsSymbol and tag);
+    } else {
+        return false;
+    }
+}
+
+fn isQuoted(expression: *Object, state: *State) bool {
+    const quote = state.getOrPutSymbol("quote");
+    return isTaggedList(expression, quote, state);
+}
+
+fn eval(expr: *Object, state: *State) EvalError!*Object {
+    _ = state;
+    if (isSelfEvaluating(expr)) {
+        return expr;
+    } else if (isQuoted(expr)) {
+        return expr.pair.cdr.pair.car;
+    } else {
+        return EvalError.InvalidExpressionType;
+    }
 }
 
 // Printing
@@ -322,20 +384,25 @@ test "Lists" {
 
     // Simple pair
     var car = Object{ .fixnum = 1 };
-    var cdr = Object{ .fixnum = 2 };
+    var cdar = Object{ .fixnum = 2 };
+    var cddr = Object{ .emptyList = true };
+    var cdr = Object{ .pair = Pair{ .car = &cdar, .cdr = &cddr } };
     const basicPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
     const basicPairRead = try read("(1 2)", &state);
     defer allocator.destroy(basicPairRead);
     defer allocator.destroy(basicPairRead.pair.car);
     defer allocator.destroy(basicPairRead.pair.cdr);
+    defer allocator.destroy(basicPairRead.pair.cdr.pair.car);
+    defer allocator.destroy(basicPairRead.pair.cdr.pair.cdr);
     try expect(basicPairTarg.pair.car.fixnum == basicPairRead.pair.car.fixnum);
-    try expect(basicPairTarg.pair.cdr.fixnum == basicPairRead.pair.cdr.fixnum);
+    try expect(basicPairTarg.pair.cdr.pair.car.fixnum == basicPairRead.pair.cdr.pair.car.fixnum);
+    try expect(basicPairTarg.pair.cdr.pair.cdr.emptyList == basicPairRead.pair.cdr.pair.cdr.emptyList);
 
     // Pair with empty list as second item
     car = Object{ .fixnum = 1 };
     cdr = Object{ .emptyList = true };
     const emptyPairTarg = Object{ .pair = Pair{ .car = &car, .cdr = &cdr } };
-    const emptyPairRead = try read("(1 ())", &state);
+    const emptyPairRead = try read("(1)", &state);
     defer allocator.destroy(emptyPairRead);
     defer allocator.destroy(emptyPairRead.pair.car);
     defer allocator.destroy(emptyPairRead.pair.cdr);

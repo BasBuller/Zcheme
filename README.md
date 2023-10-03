@@ -8,3 +8,12 @@
 
 ## Resources
 [Tutorial on how to implement a Scheme](http://peter.michaux.ca/)
+
+## Some notes about Scheme
+### Quoted expressions
+These are represented as a one level nested pair that looks as follows:
+```(quote (expr ()))```
+The outer pair consists of car(quote symbol) and cdr(expression empty_list pair). The reason for the empty list at the top level list is that the expression can be arbitrarily deep, yet it also needs its own empty list to indicate when the list is terminated. Hence, it really becomes a list in a list, so the top level quote expression needs its own terminator.
+
+## Some notes about Ziig
+The beauty of Zig is how it makes memory management very explicit. Sure, it can also be done in C by passing around allocators. But in Zig you essentially have to and the standard library is also setup as such. This results in more well contained logic and generally more potential for performance. The language is also very explicit about what it does and does not do!
