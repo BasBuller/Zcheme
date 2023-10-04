@@ -17,3 +17,8 @@ The outer pair consists of car(quote symbol) and cdr(expression empty_list pair)
 
 ## Some notes about Ziig
 The beauty of Zig is how it makes memory management very explicit. Sure, it can also be done in C by passing around allocators. But in Zig you essentially have to and the standard library is also setup as such. This results in more well contained logic and generally more potential for performance. The language is also very explicit about what it does and does not do!
+
+## Scratchpad
+
+### Implement chained environments in the form of frames
+A frame is essentially a lexical scope defining the top-level variables within that scope. In addition, scopes are chained to the higher level scopes that generated them allowing for "capturing variables" or even "searching in higher level frames" for variables that are not defined in the current scope.
