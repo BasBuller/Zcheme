@@ -39,7 +39,7 @@ const Environment = struct {
 
     fn init(allocator: Allocator) Self {
         var symbolLut = ObjectLut.init(allocator);
-        return .{ .allocator = allocator, .symbolLut = symbolLut, .outerEnvironment = undefined };
+        return .{ .allocator = allocator, .symbolLut = symbolLut, .outerEnvironment = null };
     }
 
     fn initChainedEnvironemnt(self: *Self) Environment {
@@ -58,7 +58,7 @@ const Environment = struct {
             if (self.outerEnvironment) |env| {
                 return env.getObject(symbolName);
             } else {
-                return undefined;
+                return null;
             }
         }
     }
