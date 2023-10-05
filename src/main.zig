@@ -327,9 +327,9 @@ fn eval(expr: *Object, state: *Environment) !*Object {
     } else if (try isQuoted(expr, state)) {
         return expr.pair.cdr.pair.car;
     } else if (try isAssignment(expr, state)) {
-        return try evalAssignment(expr, state);
+        return evalAssignment(expr, state);
     } else if (try isDefinition(expr, state)) {
-        return try evalDefinition(expr, state);
+        return evalDefinition(expr, state);
     } else {
         return EvalError.InvalidExpressionType;
     }
