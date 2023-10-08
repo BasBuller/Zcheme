@@ -1,7 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+// =============================
 // Objects
+// =============================
 const ObjectType = enum { fixnum, boolean, character, string, emptyList, pair, symbol };
 const Object = union(ObjectType) {
     fixnum: i64,
@@ -25,60 +27,101 @@ const Object = union(ObjectType) {
         pair.* = Object{ .pair = Pair{ .car = car, .cdr = cdr } };
         return pair;
     }
+
+    fn isPair(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.pair;
+    }
+
+    fn getCar(self: *Self) ?*Object {
+        if (self.isPair()) {
+            return self.pair.car;
+        } else {
+            return null;
+        }
+    }
+
+    fn getCdr(self: *Self) ?*Object {
+        if (self.isPair()) {
+            return self.pair.cdr;
+        } else {
+            return null;
+        }
+    }
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
+// =============================
 // State management
-const ObjectLut = std.StringHashMap(Object);
+// =============================
 const Environment = struct {
     allocator: Allocator,
-    symbolLut: ObjectLut,
+    symbolLut: std.StringHashMap(Object),
+    variableLut: std.AutoHashMap(*Object, *Object),
     outerEnvironment: ?*Environment,
 
     const Self = @This();
 
-    fn init(allocator: Allocator) Self {
-        var symbolLut = ObjectLut.init(allocator);
-        return .{ .allocator = allocator, .symbolLut = symbolLut, .outerEnvironment = null };
+    fn init(allocator: Allocator, outerEnvironment: ?*Environment) Self {
+        var symbolLut = std.StringHashMap(Object).init(allocator);
+        var variableLut = std.AutoHashMap(*Object, *Object).init(allocator);
+        return .{ .allocator = allocator, .symbolLut = symbolLut, .variableLut = variableLut, .outerEnvironment = outerEnvironment };
     }
 
-    fn initChainedEnvironemnt(self: *Self) Environment {
-        var symbolLut = ObjectLut.init(self.allocator);
-        return .{ .allocator = self.allocator, .symbolLut = symbolLut, .outerEnvironment = self };
+    fn ensureTotalCapacity(self: *Self, symbolCapacity: u32, variableCapacity: u32) !void {
+        try self.symbolLut.ensureTotalCapacity(symbolCapacity);
+        try self.variableLut.ensureTotalCapacity(variableCapacity);
     }
 
     fn deinit(self: *Self) void {
         self.symbolLut.deinit();
+        self.variableLut.deinit();
     }
 
-    fn getObject(self: *Self, symbolName: []const u8) ?*Object {
-        if (self.symbolLut.getPtr(symbolName)) |object| {
+    fn putVariable(self: *Self, symbolName: []const u8, object: *Object) !void {
+        const symbol = try self.getOrPutSymbol(symbolName);
+        try self.variableLut.put(symbol, object);
+    }
+
+    fn getVariableFromPointer(self: *Self, symbol: *Object) ?*Object {
+        if (self.variableLut.get(symbol)) |object| {
             return object;
         } else {
             if (self.outerEnvironment) |env| {
-                return env.getObject(symbolName);
+                return env.getVariableFromPointer(symbol);
             } else {
                 return null;
             }
         }
     }
 
-    fn putObject(self: *Self, symbolName: []const u8, object: Object) !void {
-        try self.symbolLut.put(symbolName, object);
+    fn getVariable(self: *Self, symbolName: []const u8) ?*Object {
+        if (self.symbolLut.get(symbolName)) |symbol| {
+            if (self.getVariableFromPointer(symbol)) |object| {
+                return object;
+            } else {
+                if (self.outerEnvironment) |env| {
+                    return env.getVariable(symbolName);
+                } else {
+                    return null;
+                }
+            }
+        } else {
+            return null;
+        }
     }
 
     fn getOrPutSymbol(self: *Self, symbolName: []const u8) !*Object {
-        if (self.getObject(symbolName)) |symbol| {
-            return symbol;
-        } else {
-            var lutRes = try self.symbolLut.getOrPut(symbolName);
+        var lutRes = try self.symbolLut.getOrPut(symbolName);
+        if (!lutRes.found_existing) {
             lutRes.value_ptr.* = Object{ .symbol = symbolName };
-            return lutRes.value_ptr;
         }
+        return lutRes.value_ptr;
     }
 };
 
+// =============================
 // Parser
+// =============================
 const ParseError = error{
     InvalidInput,
     BufferEnd,
@@ -88,6 +131,7 @@ const ParseError = error{
     Overflow,
     OutOfMemory,
     InvalidSymbol,
+    NotAPair,
 };
 
 const ParseResult = struct {
@@ -111,8 +155,9 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
-    var object = try allocator.create(Object);
+fn readCharacter(chars: []const u8, state: *Environment) ParseError!ParseResult {
+    const object = try state.allocator.create(Object);
+
     var resString: []const u8 = undefined;
     switch (chars[0]) {
         't' => {
@@ -141,20 +186,20 @@ fn readCharacter(chars: []const u8, allocator: Allocator) ParseError!ParseResult
     return ParseResult{ .object = object, .remainderString = resString };
 }
 
-fn readFixnum(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
+fn readFixnum(chars: []const u8, state: *Environment) ParseError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
     }
     var num = try std.fmt.parseInt(i64, chars[0..idx], 10);
 
-    var object = try allocator.create(Object);
+    const object = try state.allocator.create(Object);
     object.* = .{ .fixnum = num };
     return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
+fn readString(chars: []const u8, state: *Environment) ParseError!ParseResult {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -167,7 +212,7 @@ fn readString(chars: []const u8, allocator: Allocator) ParseError!ParseResult {
         if (idx == chars.len) return ParseError.UnterminatedString;
     }
 
-    var object = try allocator.create(Object);
+    const object = try state.allocator.create(Object);
     object.* = .{ .string = chars[0..idx] };
     return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
@@ -236,11 +281,11 @@ fn readPair(chars: []const u8, state: *Environment) ParseError!ParseResult {
 fn readObject(chars: []const u8, state: *Environment) ParseError!ParseResult {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
-        return readCharacter(varChars[1..], state.allocator);
+        return readCharacter(varChars[1..], state);
     } else if (((varChars.len > 1) and (varChars[0] == '-') and std.ascii.isDigit(varChars[1])) or std.ascii.isDigit(varChars[0])) {
-        return readFixnum(varChars, state.allocator);
+        return readFixnum(varChars, state);
     } else if (varChars[0] == '"') {
-        return readString(varChars[1..], state.allocator);
+        return readString(varChars[1..], state);
     } else if (isInitial(varChars[0]) or ((varChars.len > 1) and ((varChars[0] == '+') or (varChars[0] == '-')) and isDelimiter(varChars[1]))) {
         return readSymbol(varChars, state);
     } else if (varChars[0] == '(') {
@@ -257,7 +302,9 @@ fn read(chars: []const u8, state: *Environment) !*Object {
     return parseRes.object;
 }
 
+// =============================
 // Evaluate
+// =============================
 const EvalError = error{
     InvalidExpressionType,
     UnboundVariable,
@@ -274,8 +321,9 @@ fn isVariable(expression: *Object) bool {
 
 fn isTaggedList(expression: *Object, tag: *Object) bool {
     if (@as(ObjectType, expression.*) == ObjectType.pair) {
-        const carIsSymbol = @as(ObjectType, expression.pair.car.*) == ObjectType.symbol;
-        return (carIsSymbol and (expression.pair.car == tag));
+        const leadSymbol = expression.pair.car;
+        const carIsSymbol = @as(ObjectType, leadSymbol.*) == ObjectType.symbol;
+        return (carIsSymbol and (leadSymbol == tag));
     } else {
         return false;
     }
@@ -299,9 +347,9 @@ fn isDefinition(expression: *Object, state: *Environment) !bool {
 fn evalAssignment(expression: *Object, state: *Environment) !*Object {
     const symbol = expression.pair.cdr.pair.car.symbol;
     const value = expression.pair.cdr.pair.cdr.pair.car;
-    if (state.getObject(symbol)) |res| {
+    if (state.getVariable(symbol)) |res| {
         res.* = value.*;
-        return state.getObject("ok").?;
+        return state.getVariable("ok").?;
     } else {
         return EvalError.UnboundVariable;
     }
@@ -310,16 +358,16 @@ fn evalAssignment(expression: *Object, state: *Environment) !*Object {
 fn evalDefinition(expression: *Object, state: *Environment) !*Object {
     const symbol = expression.pair.cdr.pair.car.symbol;
     const value = expression.pair.cdr.pair.cdr.pair.car;
-    const lutRes = try state.symbolLut.getOrPut(symbol);
+    const lutRes = try state.variableLut.getOrPut(symbol);
     lutRes.value_ptr.* = value.*;
-    return state.getObject("ok").?;
+    return try state.getOrPutSymbol("ok");
 }
 
 fn eval(expr: *Object, state: *Environment) !*Object {
     if (isSelfEvaluating(expr)) {
         return expr;
     } else if (isVariable(expr)) {
-        if (state.getObject(expr.symbol)) |res| {
+        if (state.getVariable(expr.symbol)) |res| {
             return res;
         } else {
             return EvalError.UnboundVariable;
@@ -335,7 +383,9 @@ fn eval(expr: *Object, state: *Environment) !*Object {
     }
 }
 
+// =============================
 // Printing
+// =============================
 fn recurseList(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
     try write(pair.car, writer);
     if (@as(ObjectType, pair.cdr.*) == ObjectType.pair) {
@@ -370,17 +420,20 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
             }
         },
         Object.string => |value| try writer.print("\"{s}\"", .{value}),
-        Object.symbol => |value| try writer.print("{s}", .{value}),
+        Object.symbol => |value| try writer.print("{s} [{*}]", .{ value, object }),
         Object.emptyList => |_| try writer.print("()", .{}),
         Object.pair => |pair| try writePair(&pair, writer),
     }
 }
 
+// =============================
 // REPL
+// =============================
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
+    try state.ensureTotalCapacity(1024, 8192);
     _ = try state.getOrPutSymbol("quote");
     _ = try state.getOrPutSymbol("define");
     _ = try state.getOrPutSymbol("set!");
@@ -390,17 +443,19 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     var buffer = std.ArrayList(u8).init(allocator);
 
-    try stdout.print("\nWelcome to ZLisp (which is a Scheme)\n", .{});
+    try stdout.print("\nWelcome to ZLisp (which is a Scheme)\n\n", .{});
     while (true) {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            if (eval(value, &state)) |res| {
-                try write(res, stdout);
-                try stdout.print("\n", .{});
-            } else |err| {
-                try stdout.print("Evaluation error: \"{any}\"\n", .{err});
-            }
+            try write(value, stdout);
+            try stdout.print("\n", .{});
+            // if (eval(value, &state)) |res| {
+            //     try write(res, stdout);
+            //     try stdout.print("\n", .{});
+            // } else |err| {
+            //     try stdout.print("Evaluation error: \"{any}\"\n", .{err});
+            // }
         } else |err| {
             try stdout.print("Parsing error: \"{any}\"\n", .{err});
         }

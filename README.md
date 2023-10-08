@@ -1,3 +1,15 @@
+# ZLisp
+
+## Interpreter structure
+1. Parse text stream into lists of tokens
+2. Convert the tokens into objects, without having to evaluate them now
+3. Basic operations are Lisp operations that are implemented in the interpreter using Zig
+    - Composed expressions are built out of the base operations
+    - Symbols reside in a LUT
+4. Rerun the following loop until we get down to just symbols and primitive procedures
+    a. Expressions to be evaluated in environments are reduced to procedures applied to arguments
+    b. The procedures in turn are reduced to expressions in new environments
+5. Lookup symbol values and primitive procedures are applied directly
 
 ## Plans
 - [ ] Implement very simple tree traversal interpreter
