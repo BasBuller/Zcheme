@@ -48,7 +48,12 @@ const Environment = struct {
     fn init(allocator: Allocator, outerEnvironment: ?*Environment) Self {
         var symbolLut = std.StringHashMap(*Object).init(allocator);
         var variableLut = std.AutoHashMap(*Object, *Object).init(allocator);
-        return .{ .allocator = allocator, .symbolLut = symbolLut, .variableLut = variableLut, .outerEnvironment = outerEnvironment };
+        return .{
+            .allocator = allocator,
+            .symbolLut = symbolLut,
+            .variableLut = variableLut,
+            .outerEnvironment = outerEnvironment,
+        };
     }
 
     fn ensureTotalCapacity(self: *Self, symbolCapacity: u32, variableCapacity: u32) !void {
@@ -94,10 +99,14 @@ const Environment = struct {
         }
     }
 
+    /// Puts the key string on the heap, then creates symbol lut entry based on pointed to the key string on the heap.
+    /// Reason for first storing key on the heap is that otherwise there is a mutating reference to the array used for storing IO.
     fn putSymbol(self: *Self, symbolName: []const u8) !void {
-        const symbol = try self.allocator.create(Object);
-        symbol.* = Object{ .symbol = symbolName };
-        try self.symbolLut.put(symbolName, symbol);
+        const symbolKey = try self.allocator.alloc(u8, symbolName.len);
+        @memcpy(symbolKey, symbolName);
+        var symbol = try self.allocator.create(Object);
+        symbol.* = Object{ .symbol = symbolKey };
+        try self.symbolLut.put(symbolKey, symbol);
     }
 
     fn getSymbol(self: *Self, symbolName: []const u8) ?*Object {
@@ -112,9 +121,10 @@ const Environment = struct {
     }
 
     fn printSymbols(self: *Self, writer: std.fs.File.Writer) !void {
-        for (self.symbolLut.iterator()) |key| {
-            const value = self.symbolLut.get(key).?;
-            try writer.print("key: {s} - value: {any}\n", .{ key, value });
+        var iter = self.symbolLut.iterator();
+        try writer.print("\n", .{});
+        while (iter.next()) |entry| {
+            try writer.print("key: {s}[{*}] --- value: {s}[{*}]\n", .{ entry.key_ptr.*, entry.key_ptr, entry.value_ptr.*.symbol, entry.value_ptr });
         }
     }
 };
@@ -298,7 +308,7 @@ fn readObject(chars: []const u8, state: *Environment) ParseError!ParseResult {
 }
 
 fn read(chars: []const u8, state: *Environment) !*Object {
-    var parseRes = try readObject(chars, state);
+    const parseRes = try readObject(chars, state);
     return parseRes.object;
 }
 
@@ -444,17 +454,18 @@ pub fn main() !void {
 
     try stdout.print("\nWelcome to ZLisp (which is a Scheme)\n\n", .{});
     while (true) {
+        // try state.printSymbols(stdout);
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            // try write(value, stdout);
-            // try stdout.print("\n", .{});
-            if (eval(value, &state)) |res| {
-                try write(res, stdout);
-                try stdout.print("\n", .{});
-            } else |err| {
-                try stdout.print("Evaluation error: \"{any}\"\n", .{err});
-            }
+            try write(value, stdout);
+            try stdout.print("\n", .{});
+            // if (eval(value, &state)) |res| {
+            //     try write(res, stdout);
+            //     try stdout.print("\n", .{});
+            // } else |err| {
+            //     try stdout.print("Evaluation error: \"{any}\"\n", .{err});
+            // }
         } else |err| {
             try stdout.print("Parsing error: \"{any}\"\n", .{err});
         }
