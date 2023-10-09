@@ -56,6 +56,15 @@ const Environment = struct {
         };
     }
 
+    fn initTopLevel(allocator: Allocator) !Self {
+        var state = Self.init(allocator, null);
+        _ = try state.putSymbol("quote");
+        _ = try state.putSymbol("define");
+        _ = try state.putSymbol("set!");
+        _ = try state.putSymbol("ok");
+        return state;
+    }
+
     fn ensureTotalCapacity(self: *Self, symbolCapacity: u32, variableCapacity: u32) !void {
         try self.symbolLut.ensureTotalCapacity(symbolCapacity);
         try self.variableLut.ensureTotalCapacity(variableCapacity);
@@ -359,7 +368,7 @@ fn evalAssignment(expression: *Object, state: *Environment) !*Object {
     const value = expression.pair.cdr.pair.cdr.pair.car;
     if (state.getVariable(symbol)) |res| {
         res.* = value.*;
-        return state.getVariable("ok").?;
+        return state.getSymbol("ok").?;
     } else {
         return EvalError.UnboundVariable;
     }
@@ -369,7 +378,7 @@ fn evalDefinition(expression: *Object, state: *Environment) !*Object {
     const symbolName = expression.pair.cdr.pair.car.symbol;
     const value = expression.pair.cdr.pair.cdr.pair.car;
     try state.putVariable(symbolName, value);
-    return try state.getInsertSymbol("ok");
+    return state.getSymbol("ok").?;
 }
 
 fn eval(expr: *Object, state: *Environment) !*Object {
@@ -441,12 +450,7 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    var state = Environment.init(allocator, null);
-    try state.ensureTotalCapacity(1024, 8192);
-    _ = try state.putSymbol("quote");
-    _ = try state.putSymbol("define");
-    _ = try state.putSymbol("set!");
-    _ = try state.putSymbol("ok");
+    var state = try Environment.initTopLevel(allocator);
 
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
@@ -458,14 +462,14 @@ pub fn main() !void {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            try write(value, stdout);
-            try stdout.print("\n", .{});
-            // if (eval(value, &state)) |res| {
-            //     try write(res, stdout);
-            //     try stdout.print("\n", .{});
-            // } else |err| {
-            //     try stdout.print("Evaluation error: \"{any}\"\n", .{err});
-            // }
+            // try write(value, stdout);
+            // try stdout.print("\n", .{});
+            if (eval(value, &state)) |res| {
+                try write(res, stdout);
+                try stdout.print("\n", .{});
+            } else |err| {
+                try stdout.print("Evaluation error: \"{any}\"\n", .{err});
+            }
         } else |err| {
             try stdout.print("Parsing error: \"{any}\"\n", .{err});
         }
