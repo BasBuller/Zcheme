@@ -62,6 +62,7 @@ const Environment = struct {
         _ = try state.putSymbol("define");
         _ = try state.putSymbol("set!");
         _ = try state.putSymbol("ok");
+        _ = try state.putSymbol("if");
         return state;
     }
 
@@ -71,8 +72,20 @@ const Environment = struct {
     }
 
     fn deinit(self: *Self) void {
-        self.symbolLut.deinit();
+        // Variables
+        var valueIterator = self.variableLut.valueIterator();
+        while (valueIterator.next()) |item| {
+            self.allocator.destroy(item.*);
+        }
         self.variableLut.deinit();
+
+        // Symbols
+        var symbolIterator = self.symbolLut.iterator();
+        while (symbolIterator.next()) |item| {
+            self.allocator.free(item.key_ptr.*);
+            self.allocator.destroy(item.value_ptr.*);
+        }
+        self.symbolLut.deinit();
     }
 
     fn putVariable(self: *Self, symbolName: []const u8, object: *Object) !void {
@@ -348,20 +361,25 @@ fn isTaggedList(expression: *Object, tag: *Object) bool {
     }
 }
 
-fn isQuoted(expression: *Object, state: *Environment) !bool {
-    const quote = try state.getInsertSymbol("quote");
+fn isQuoted(expression: *Object, state: *Environment) bool {
+    const quote = state.getSymbol("quote").?;
     return isTaggedList(expression, quote);
 }
 
-fn isAssignment(expression: *Object, state: *Environment) !bool {
-    const setSymbol = try state.getInsertSymbol("set!");
+fn isAssignment(expression: *Object, state: *Environment) bool {
+    const setSymbol = state.getSymbol("set!").?;
     return isTaggedList(expression, setSymbol);
 }
 
-fn isDefinition(expression: *Object, state: *Environment) !bool {
-    const defineSymbol = try state.getInsertSymbol("define");
+fn isDefinition(expression: *Object, state: *Environment) bool {
+    const defineSymbol = state.getSymbol("define").?;
     return isTaggedList(expression, defineSymbol);
 }
+
+// fn isIf(expression: *Object, state: *Environment) bool {
+//     const ifSymbol = state.getSymbol("if").?;
+//     return isTaggedList(expression, ifSymbol);
+// }
 
 fn evalAssignment(expression: *Object, state: *Environment) !*Object {
     const symbol = expression.pair.cdr.pair.car.symbol;
@@ -390,11 +408,11 @@ fn eval(expr: *Object, state: *Environment) !*Object {
         } else {
             return EvalError.UnboundVariable;
         }
-    } else if (try isQuoted(expr, state)) {
+    } else if (isQuoted(expr, state)) {
         return expr.pair.cdr.pair.car;
-    } else if (try isAssignment(expr, state)) {
+    } else if (isAssignment(expr, state)) {
         return evalAssignment(expr, state);
-    } else if (try isDefinition(expr, state)) {
+    } else if (isDefinition(expr, state)) {
         return evalDefinition(expr, state);
     } else {
         return EvalError.InvalidExpressionType;
@@ -462,8 +480,6 @@ pub fn main() !void {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            // try write(value, stdout);
-            // try stdout.print("\n", .{});
             if (eval(value, &state)) |res| {
                 try write(res, stdout);
                 try stdout.print("\n", .{});
@@ -572,10 +588,10 @@ test "Symbols" {
     var state = Environment.init(allocator, null);
     defer state.deinit();
 
-    var obj0 = try read("abc", &state);
-    var obj1 = try read("abc", &state);
+    const obj0 = try read("abc", &state);
+    const obj1 = try read("abc", &state);
     try expect(obj0 == obj1);
 
-    var obj2 = try read("abcd", &state);
+    const obj2 = try read("abcd", &state);
     try expect(obj0 != obj2);
 }
