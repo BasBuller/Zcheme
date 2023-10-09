@@ -31,22 +31,6 @@ const Object = union(ObjectType) {
     fn isPair(self: *Self) bool {
         return @as(ObjectType, self.*) == ObjectType.pair;
     }
-
-    fn getCar(self: *Self) ?*Object {
-        if (self.isPair()) {
-            return self.pair.car;
-        } else {
-            return null;
-        }
-    }
-
-    fn getCdr(self: *Self) ?*Object {
-        if (self.isPair()) {
-            return self.pair.cdr;
-        } else {
-            return null;
-        }
-    }
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
@@ -55,14 +39,14 @@ const Pair = struct { car: *Object, cdr: *Object };
 // =============================
 const Environment = struct {
     allocator: Allocator,
-    symbolLut: std.StringHashMap(Object),
+    symbolLut: std.StringHashMap(*Object),
     variableLut: std.AutoHashMap(*Object, *Object),
     outerEnvironment: ?*Environment,
 
     const Self = @This();
 
     fn init(allocator: Allocator, outerEnvironment: ?*Environment) Self {
-        var symbolLut = std.StringHashMap(Object).init(allocator);
+        var symbolLut = std.StringHashMap(*Object).init(allocator);
         var variableLut = std.AutoHashMap(*Object, *Object).init(allocator);
         return .{ .allocator = allocator, .symbolLut = symbolLut, .variableLut = variableLut, .outerEnvironment = outerEnvironment };
     }
@@ -78,7 +62,7 @@ const Environment = struct {
     }
 
     fn putVariable(self: *Self, symbolName: []const u8, object: *Object) !void {
-        const symbol = try self.getOrPutSymbol(symbolName);
+        const symbol = try self.getInsertSymbol(symbolName);
         try self.variableLut.put(symbol, object);
     }
 
@@ -110,12 +94,28 @@ const Environment = struct {
         }
     }
 
-    fn getOrPutSymbol(self: *Self, symbolName: []const u8) !*Object {
-        var lutRes = try self.symbolLut.getOrPut(symbolName);
-        if (!lutRes.found_existing) {
-            lutRes.value_ptr.* = Object{ .symbol = symbolName };
+    fn putSymbol(self: *Self, symbolName: []const u8) !void {
+        const symbol = try self.allocator.create(Object);
+        symbol.* = Object{ .symbol = symbolName };
+        try self.symbolLut.put(symbolName, symbol);
+    }
+
+    fn getSymbol(self: *Self, symbolName: []const u8) ?*Object {
+        return self.symbolLut.get(symbolName);
+    }
+
+    fn getInsertSymbol(self: *Self, symbolName: []const u8) !*Object {
+        if (!self.symbolLut.contains(symbolName)) {
+            try self.putSymbol(symbolName);
         }
-        return lutRes.value_ptr;
+        return self.getSymbol(symbolName).?;
+    }
+
+    fn printSymbols(self: *Self, writer: std.fs.File.Writer) !void {
+        for (self.symbolLut.iterator()) |key| {
+            const value = self.symbolLut.get(key).?;
+            try writer.print("key: {s} - value: {any}\n", .{ key, value });
+        }
     }
 };
 
@@ -228,15 +228,15 @@ fn readSymbol(chars: []const u8, state: *Environment) ParseError!ParseResult {
     if ((idx == chars.len) or
         ((idx < chars.len) and isDelimiter(chars[idx])))
     {
-        const object = try state.getOrPutSymbol(chars[0..idx]);
-        return ParseResult{ .object = object, .remainderString = chars[idx..] };
+        const symbol = try state.getInsertSymbol(chars[0..idx]);
+        return ParseResult{ .object = symbol, .remainderString = chars[idx..] };
     } else {
         return ParseError.InvalidSymbol;
     }
 }
 
 fn readQuotedList(chars: []const u8, state: *Environment) ParseError!ParseResult {
-    const quote = try state.getOrPutSymbol("quote");
+    const quote = try state.getInsertSymbol("quote");
     const objRes = try readObject(chars, state);
     const emptyList = try Object.createEmptyList(state.allocator);
     const quotedObject = try Object.createPair(objRes.object, emptyList, state.allocator);
@@ -330,17 +330,17 @@ fn isTaggedList(expression: *Object, tag: *Object) bool {
 }
 
 fn isQuoted(expression: *Object, state: *Environment) !bool {
-    const quote = try state.getOrPutSymbol("quote");
+    const quote = try state.getInsertSymbol("quote");
     return isTaggedList(expression, quote);
 }
 
 fn isAssignment(expression: *Object, state: *Environment) !bool {
-    const setSymbol = try state.getOrPutSymbol("set!");
+    const setSymbol = try state.getInsertSymbol("set!");
     return isTaggedList(expression, setSymbol);
 }
 
 fn isDefinition(expression: *Object, state: *Environment) !bool {
-    const defineSymbol = try state.getOrPutSymbol("define");
+    const defineSymbol = try state.getInsertSymbol("define");
     return isTaggedList(expression, defineSymbol);
 }
 
@@ -356,11 +356,10 @@ fn evalAssignment(expression: *Object, state: *Environment) !*Object {
 }
 
 fn evalDefinition(expression: *Object, state: *Environment) !*Object {
-    const symbol = expression.pair.cdr.pair.car.symbol;
+    const symbolName = expression.pair.cdr.pair.car.symbol;
     const value = expression.pair.cdr.pair.cdr.pair.car;
-    const lutRes = try state.variableLut.getOrPut(symbol);
-    lutRes.value_ptr.* = value.*;
-    return try state.getOrPutSymbol("ok");
+    try state.putVariable(symbolName, value);
+    return try state.getInsertSymbol("ok");
 }
 
 fn eval(expr: *Object, state: *Environment) !*Object {
@@ -420,7 +419,7 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
             }
         },
         Object.string => |value| try writer.print("\"{s}\"", .{value}),
-        Object.symbol => |value| try writer.print("{s} [{*}]", .{ value, object }),
+        Object.symbol => |value| try writer.print("{s}", .{value}),
         Object.emptyList => |_| try writer.print("()", .{}),
         Object.pair => |pair| try writePair(&pair, writer),
     }
@@ -434,10 +433,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var state = Environment.init(allocator, null);
     try state.ensureTotalCapacity(1024, 8192);
-    _ = try state.getOrPutSymbol("quote");
-    _ = try state.getOrPutSymbol("define");
-    _ = try state.getOrPutSymbol("set!");
-    _ = try state.getOrPutSymbol("ok");
+    _ = try state.putSymbol("quote");
+    _ = try state.putSymbol("define");
+    _ = try state.putSymbol("set!");
+    _ = try state.putSymbol("ok");
 
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
@@ -448,14 +447,14 @@ pub fn main() !void {
         try stdout.print("> ", .{});
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         if (read(buffer.items, &state)) |value| {
-            try write(value, stdout);
-            try stdout.print("\n", .{});
-            // if (eval(value, &state)) |res| {
-            //     try write(res, stdout);
-            //     try stdout.print("\n", .{});
-            // } else |err| {
-            //     try stdout.print("Evaluation error: \"{any}\"\n", .{err});
-            // }
+            // try write(value, stdout);
+            // try stdout.print("\n", .{});
+            if (eval(value, &state)) |res| {
+                try write(res, stdout);
+                try stdout.print("\n", .{});
+            } else |err| {
+                try stdout.print("Evaluation error: \"{any}\"\n", .{err});
+            }
         } else |err| {
             try stdout.print("Parsing error: \"{any}\"\n", .{err});
         }
@@ -463,10 +462,13 @@ pub fn main() !void {
     }
 }
 
+// =============================
+// Testing
+// =============================
 test "Booleans" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
     defer state.deinit();
 
     const trueTarg = Object{ .boolean = true };
@@ -483,7 +485,7 @@ test "Booleans" {
 test "Fixnums" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
     defer state.deinit();
 
     const posNumTarg = Object{ .fixnum = 5 };
@@ -500,7 +502,7 @@ test "Fixnums" {
 test "Strings" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
     defer state.deinit();
 
     const stringTarg = Object{ .string = "abcd\\\"efg" };
@@ -512,7 +514,7 @@ test "Strings" {
 test "Lists" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
     defer state.deinit();
 
     // (Empty, for now) list
@@ -552,7 +554,7 @@ test "Lists" {
 test "Symbols" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator);
+    var state = Environment.init(allocator, null);
     defer state.deinit();
 
     var obj0 = try read("abc", &state);
