@@ -376,10 +376,35 @@ fn isDefinition(expression: *Object, state: *Environment) bool {
     return isTaggedList(expression, defineSymbol);
 }
 
-// fn isIf(expression: *Object, state: *Environment) bool {
-//     const ifSymbol = state.getSymbol("if").?;
-//     return isTaggedList(expression, ifSymbol);
-// }
+fn isIf(expression: *Object, state: *Environment) bool {
+    const ifSymbol = state.getSymbol("if").?;
+    return isTaggedList(expression, ifSymbol);
+}
+
+fn isTrue(expression: *Object) bool {
+    const isBool = @as(ObjectType, expression.*) == ObjectType.boolean;
+    if (isBool) {
+        return expression.boolean;
+    } else {
+        return true;
+    }
+}
+
+fn evalIf(expression: *Object, state: *Environment) !*Object {
+    const predicate = expression.pair.cdr.pair.car;
+    if (isTrue(predicate)) {
+        return expression.pair.cdr.pair.cdr.pair.car;
+    } else {
+        const resObj = expression.pair.cdr.pair.cdr.pair.cdr;
+        if (@as(ObjectType, resObj.*) == ObjectType.emptyList) {
+            const obj = try state.allocator.create(Object);
+            obj.* = Object{ .boolean = false };
+            return obj;
+        } else {
+            return resObj.pair.car;
+        }
+    }
+}
 
 fn evalAssignment(expression: *Object, state: *Environment) !*Object {
     const symbol = expression.pair.cdr.pair.car.symbol;
@@ -399,23 +424,28 @@ fn evalDefinition(expression: *Object, state: *Environment) !*Object {
     return state.getSymbol("ok").?;
 }
 
-fn eval(expr: *Object, state: *Environment) !*Object {
-    if (isSelfEvaluating(expr)) {
-        return expr;
-    } else if (isVariable(expr)) {
-        if (state.getVariable(expr.symbol)) |res| {
-            return res;
+fn eval(expression: *Object, state: *Environment) !*Object {
+    var expr = expression;
+    while (true) {
+        if (isSelfEvaluating(expr)) {
+            return expr;
+        } else if (isVariable(expr)) {
+            if (state.getVariable(expr.symbol)) |res| {
+                return res;
+            } else {
+                return EvalError.UnboundVariable;
+            }
+        } else if (isQuoted(expr, state)) {
+            return expr.pair.cdr.pair.car;
+        } else if (isAssignment(expr, state)) {
+            return evalAssignment(expr, state);
+        } else if (isDefinition(expr, state)) {
+            return evalDefinition(expr, state);
+        } else if (isIf(expr, state)) {
+            expr = try evalIf(expr, state);
         } else {
-            return EvalError.UnboundVariable;
+            return EvalError.InvalidExpressionType;
         }
-    } else if (isQuoted(expr, state)) {
-        return expr.pair.cdr.pair.car;
-    } else if (isAssignment(expr, state)) {
-        return evalAssignment(expr, state);
-    } else if (isDefinition(expr, state)) {
-        return evalDefinition(expr, state);
-    } else {
-        return EvalError.InvalidExpressionType;
     }
 }
 
