@@ -1,5 +1,9 @@
 # ZLisp
 
+## To Do's
+- [ ] Implement cleanup of intermediate objects that are not always part of a variable
+    - This would mean implementing a garbage collector lol
+
 ## Interpreter structure
 1. Parse text stream into lists of tokens
 2. Convert the tokens into objects, without having to evaluate them now

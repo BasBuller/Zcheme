@@ -2,9 +2,41 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 // =============================
+// Errors
+// =============================
+const ParseError = error{
+    InvalidInput,
+    BufferEnd,
+    UnterminatedString,
+    MissingClosingParanthesis,
+    InvalidCharacter,
+    Overflow,
+    OutOfMemory,
+    InvalidSymbol,
+    NotAPair,
+};
+const EvalError = error{
+    InvalidExpressionType,
+    UnboundVariable,
+};
+const LispError = error{
+    InvalidInput,
+    BufferEnd,
+    UnterminatedString,
+    MissingClosingParanthesis,
+    InvalidCharacter,
+    Overflow,
+    OutOfMemory,
+    InvalidSymbol,
+    NotAPair,
+    InvalidExpressionType,
+    UnboundVariable,
+};
+
+// =============================
 // Objects
 // =============================
-const ObjectType = enum { fixnum, boolean, character, string, emptyList, pair, symbol };
+const ObjectType = enum { fixnum, boolean, character, string, emptyList, pair, symbol, primitiveProc };
 const Object = union(ObjectType) {
     fixnum: i64,
     boolean: bool,
@@ -13,6 +45,7 @@ const Object = union(ObjectType) {
     emptyList: bool,
     pair: Pair,
     symbol: []const u8,
+    primitiveProc: *const fn (arguments: *Object, state: *Environment) LispError!*Object,
 
     const Self = @This();
 
@@ -33,6 +66,22 @@ const Object = union(ObjectType) {
     }
 };
 const Pair = struct { car: *Object, cdr: *Object };
+
+// =============================
+// Primitive operations
+// =============================
+fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
+    var res: i64 = 0;
+    var args = arguments;
+    while (!(@as(ObjectType, args.*) == ObjectType.emptyList)) {
+        res += args.pair.car.fixnum;
+        args = args.pair.cdr;
+    }
+
+    const obj = try state.allocator.create(Object);
+    obj.* = Object{ .fixnum = res };
+    return obj;
+}
 
 // =============================
 // State management
@@ -63,6 +112,9 @@ const Environment = struct {
         _ = try state.putSymbol("set!");
         _ = try state.putSymbol("ok");
         _ = try state.putSymbol("if");
+
+        try state.addPrimitiveProc("+", &addProc);
+
         return state;
     }
 
@@ -142,6 +194,13 @@ const Environment = struct {
         return self.getSymbol(symbolName).?;
     }
 
+    fn addPrimitiveProc(self: *Self, procName: []const u8, proc: *const fn (arguments: *Object, state: *Environment) LispError!*Object) !void {
+        const addObject = try self.allocator.create(Object);
+        addObject.* = Object{ .primitiveProc = proc };
+        try self.putVariable(procName, addObject);
+    }
+
+    // Utils
     fn printSymbols(self: *Self, writer: std.fs.File.Writer) !void {
         var iter = self.symbolLut.iterator();
         try writer.print("\n", .{});
@@ -154,18 +213,6 @@ const Environment = struct {
 // =============================
 // Parser
 // =============================
-const ParseError = error{
-    InvalidInput,
-    BufferEnd,
-    UnterminatedString,
-    MissingClosingParanthesis,
-    InvalidCharacter,
-    Overflow,
-    OutOfMemory,
-    InvalidSymbol,
-    NotAPair,
-};
-
 const ParseResult = struct {
     object: *Object,
     remainderString: []const u8,
@@ -337,10 +384,6 @@ fn read(chars: []const u8, state: *Environment) !*Object {
 // =============================
 // Evaluate
 // =============================
-const EvalError = error{
-    InvalidExpressionType,
-    UnboundVariable,
-};
 
 fn isSelfEvaluating(object: *Object) bool {
     const objType = @as(ObjectType, object.*);
@@ -390,6 +433,10 @@ fn isTrue(expression: *Object) bool {
     }
 }
 
+fn isApplication(expression: *Object) bool {
+    return @as(ObjectType, expression.*) == ObjectType.pair;
+}
+
 fn evalIf(expression: *Object, state: *Environment) !*Object {
     const predicate = expression.pair.cdr.pair.car;
     if (isTrue(predicate)) {
@@ -424,7 +471,23 @@ fn evalDefinition(expression: *Object, state: *Environment) !*Object {
     return state.getSymbol("ok").?;
 }
 
-fn eval(expression: *Object, state: *Environment) !*Object {
+fn listOfValues(expressions: *Object, state: *Environment) LispError!*Object {
+    if (@as(ObjectType, expressions.*) == ObjectType.emptyList) {
+        return Object.createEmptyList(state.allocator);
+    } else {
+        const car = try eval(expressions.pair.car, state);
+        const cdr = try listOfValues(expressions.pair.cdr, state);
+        return try Object.createPair(car, cdr, state.allocator);
+    }
+}
+
+fn evalApplication(expression: *Object, state: *Environment) LispError!*Object {
+    const procedure = try eval(expression.pair.car, state);
+    const arguments = try listOfValues(expression.pair.cdr, state);
+    return procedure.primitiveProc(arguments, state);
+}
+
+fn eval(expression: *Object, state: *Environment) LispError!*Object {
     var expr = expression;
     while (true) {
         if (isSelfEvaluating(expr)) {
@@ -443,6 +506,8 @@ fn eval(expression: *Object, state: *Environment) !*Object {
             return evalDefinition(expr, state);
         } else if (isIf(expr, state)) {
             expr = try evalIf(expr, state);
+        } else if (isApplication(expr)) {
+            return evalApplication(expr, state);
         } else {
             return EvalError.InvalidExpressionType;
         }
@@ -489,6 +554,7 @@ fn write(object: *Object, writer: std.fs.File.Writer) std.fs.File.Writer.Error!v
         Object.symbol => |value| try writer.print("{s}", .{value}),
         Object.emptyList => |_| try writer.print("()", .{}),
         Object.pair => |pair| try writePair(&pair, writer),
+        Object.primitiveProc => |_| try writer.print("#<procedure>", .{}),
     }
 }
 
