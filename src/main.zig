@@ -164,6 +164,12 @@ const Environment = struct {
             self.allocator.destroy(item.value_ptr.*);
         }
         self.symbolLut.deinit();
+
+        var constantIterator = self.constantLut.keyIterator();
+        while (constantIterator.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.constantLut.deinit();
     }
 
     fn putConstant(self: *Self, constantName: []const u8, object: Object) !void {
@@ -278,7 +284,7 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readCharacter(chars: []const u8, state: *Environment) LispError!ParseResult {
     const object = try state.allocator.create(Object);
 
     var resString: []const u8 = undefined;
@@ -309,7 +315,7 @@ fn readCharacter(chars: []const u8, state: *Environment) ParseError!ParseResult 
     return ParseResult{ .object = object, .remainderString = resString };
 }
 
-fn readFixnum(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readFixnum(chars: []const u8, state: *Environment) LispError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
@@ -322,7 +328,7 @@ fn readFixnum(chars: []const u8, state: *Environment) ParseError!ParseResult {
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readString(chars: []const u8, state: *Environment) LispError!ParseResult {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -340,7 +346,7 @@ fn readString(chars: []const u8, state: *Environment) ParseError!ParseResult {
     return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
 
-fn readSymbol(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readSymbol(chars: []const u8, state: *Environment) LispError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and
         (isInitial(chars[idx]) or std.ascii.isDigit(chars[idx]) or (chars[idx] == '+') or (chars[idx] == '-')))
@@ -358,17 +364,17 @@ fn readSymbol(chars: []const u8, state: *Environment) ParseError!ParseResult {
     }
 }
 
-fn readQuotedList(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readQuotedList(chars: []const u8, state: *Environment) LispError!ParseResult {
     const quote = try state.getInsertSymbol("quote");
     const objRes = try readObject(chars, state);
-    const emptyList = try Object.createEmptyList(state.allocator);
+    const emptyList = try state.getConstant("emptyList");
     const quotedObject = try Object.createPair(objRes.object, emptyList, state.allocator);
     const resObject = try Object.createPair(quote, quotedObject, state.allocator);
     const res = ParseResult{ .object = resObject, .remainderString = objRes.remainderString };
     return res;
 }
 
-fn readPair(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readPair(chars: []const u8, state: *Environment) LispError!ParseResult {
     if (chars[0] == ')') {
         const object = try Object.createEmptyList(state.allocator);
         return ParseResult{ .object = object, .remainderString = chars[1..] };
@@ -401,7 +407,7 @@ fn readPair(chars: []const u8, state: *Environment) ParseError!ParseResult {
     return ParseResult{ .object = object, .remainderString = varChars };
 }
 
-fn readObject(chars: []const u8, state: *Environment) ParseError!ParseResult {
+fn readObject(chars: []const u8, state: *Environment) LispError!ParseResult {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
         return readCharacter(varChars[1..], state);
@@ -639,7 +645,7 @@ pub fn main() !void {
 test "Booleans" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator, null);
+    var state = try Environment.initTopLevel(allocator);
     defer state.deinit();
 
     const trueTarg = Object{ .boolean = true };
@@ -656,7 +662,7 @@ test "Booleans" {
 test "Fixnums" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator, null);
+    var state = try Environment.initTopLevel(allocator);
     defer state.deinit();
 
     const posNumTarg = Object{ .fixnum = 5 };
@@ -673,7 +679,7 @@ test "Fixnums" {
 test "Strings" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator, null);
+    var state = try Environment.initTopLevel(allocator);
     defer state.deinit();
 
     const stringTarg = Object{ .string = "abcd\\\"efg" };
@@ -685,7 +691,7 @@ test "Strings" {
 test "Lists" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator, null);
+    var state = try Environment.initTopLevel(allocator);
     defer state.deinit();
 
     // (Empty, for now) list
@@ -725,7 +731,7 @@ test "Lists" {
 test "Symbols" {
     const expect = std.testing.expect;
     var allocator = std.testing.allocator;
-    var state = Environment.init(allocator, null);
+    var state = try Environment.initTopLevel(allocator);
     defer state.deinit();
 
     const obj0 = try read("abc", &state);
