@@ -18,6 +18,7 @@ const ParseError = error{
 const EvalError = error{
     InvalidExpressionType,
     UnboundVariable,
+    UnboundConstant,
 };
 const LispError = error{
     InvalidInput,
@@ -31,6 +32,7 @@ const LispError = error{
     NotAPair,
     InvalidExpressionType,
     UnboundVariable,
+    UnboundConstant,
 };
 
 // =============================
@@ -67,9 +69,21 @@ const Object = union(ObjectType) {
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
+fn isEmptyList(object: *Object) bool {
+    return @as(ObjectType, object.*) == ObjectType.emptyList;
+}
+
 // =============================
-// Primitive operations
+// Primitive procedures
 // =============================
+fn isNullProc(arguments: *Object, state: *Environment) LispError!*Object {
+    if (isEmptyList(arguments.pair.car)) {
+        return try state.getConstant("true");
+    } else {
+        return try state.getConstant("false");
+    }
+}
+
 fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
     var res: i64 = 0;
     var args = arguments;
@@ -88,6 +102,7 @@ fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
 // =============================
 const Environment = struct {
     allocator: Allocator,
+    constantLut: std.StringHashMap(Object),
     symbolLut: std.StringHashMap(*Object),
     variableLut: std.AutoHashMap(*Object, *Object),
     outerEnvironment: ?*Environment,
@@ -95,10 +110,12 @@ const Environment = struct {
     const Self = @This();
 
     fn init(allocator: Allocator, outerEnvironment: ?*Environment) Self {
+        var constantLut = std.StringHashMap(Object).init(allocator);
         var symbolLut = std.StringHashMap(*Object).init(allocator);
         var variableLut = std.AutoHashMap(*Object, *Object).init(allocator);
         return .{
             .allocator = allocator,
+            .constantLut = constantLut,
             .symbolLut = symbolLut,
             .variableLut = variableLut,
             .outerEnvironment = outerEnvironment,
@@ -107,13 +124,22 @@ const Environment = struct {
 
     fn initTopLevel(allocator: Allocator) !Self {
         var state = Self.init(allocator, null);
+
+        // Insert symbols
         _ = try state.putSymbol("quote");
         _ = try state.putSymbol("define");
         _ = try state.putSymbol("set!");
         _ = try state.putSymbol("ok");
         _ = try state.putSymbol("if");
 
+        // Add constant objects
+        try state.putConstant("true", Object{ .boolean = true });
+        try state.putConstant("false", Object{ .boolean = false });
+        try state.putConstant("emptylist", Object{ .emptyList = true });
+
+        // Add procedures
         try state.addPrimitiveProc("+", &addProc);
+        try state.addPrimitiveProc("null?", &isNullProc);
 
         return state;
     }
@@ -138,6 +164,24 @@ const Environment = struct {
             self.allocator.destroy(item.value_ptr.*);
         }
         self.symbolLut.deinit();
+    }
+
+    fn putConstant(self: *Self, constantName: []const u8, object: Object) !void {
+        const constantKey = try self.allocator.alloc(u8, constantName.len);
+        @memcpy(constantKey, constantName);
+        try self.constantLut.put(constantKey, object);
+    }
+
+    fn getConstant(self: *Self, constantName: []const u8) !*Object {
+        if (self.outerEnvironment) |outerEnv| {
+            return try outerEnv.getConstant(constantName);
+        } else {
+            if (self.constantLut.getPtr(constantName)) |objPtr| {
+                return objPtr;
+            } else {
+                return EvalError.UnboundConstant;
+            }
+        }
     }
 
     fn putVariable(self: *Self, symbolName: []const u8, object: *Object) !void {
