@@ -133,38 +133,9 @@ const Object = union(ObjectType) {
 };
 const Pair = struct { car: *Object, cdr: *Object };
 
-fn isFixnum(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.fixnum;
-}
-
-fn isBoolean(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.boolean;
-}
-
-fn isCharacter(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.character;
-}
-
-fn isString(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.string;
-}
-
-fn isEmptyList(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.emptyList;
-}
-
-fn isPair(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.pair;
-}
-
-fn isSymbol(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.symbol;
-}
-
-fn isPrimitiveProc(object: *Object) bool {
-    return @as(ObjectType, object.*) == ObjectType.primitiveProc;
-}
-
+// =============================
+// Typecheck procedures
+// =============================
 fn returnBool(decision: bool, state: *Environment) LispError!*Object {
     if (decision) {
         return try state.getConstant("true");
@@ -173,46 +144,43 @@ fn returnBool(decision: bool, state: *Environment) LispError!*Object {
     }
 }
 
-// =============================
-// Typecheck procedures
-// =============================
 fn isNullProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isEmptyList(arguments.pair.car);
+    const decision = arguments.pair.car.isEmptyList();
     return try returnBool(decision, state);
 }
 
 fn isBooleanProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isBoolean(arguments.pair.car);
+    const decision = arguments.pair.car.isBoolean();
     return try returnBool(decision, state);
 }
 
 fn isSymbolProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isSymbol(arguments.pair.car);
+    const decision = arguments.pair.car.isSymbol();
     return try returnBool(decision, state);
 }
 
 fn isIntegerProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isFixnum(arguments.pair.car);
+    const decision = arguments.pair.car.isFixnum();
     return try returnBool(decision, state);
 }
 
 fn isCharProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isCharacter(arguments.pair.car);
+    const decision = arguments.pair.car.isCharacter();
     return try returnBool(decision, state);
 }
 
 fn isStringProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isString(arguments.pair.car);
+    const decision = arguments.pair.car.isString();
     return try returnBool(decision, state);
 }
 
 fn isPairProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isPair(arguments.pair.car);
+    const decision = arguments.pair.car.isPair();
     return try returnBool(decision, state);
 }
 
 fn isProcedureProc(arguments: *Object, state: *Environment) LispError!*Object {
-    const decision = isPrimitiveProc(arguments.pair.car);
+    const decision = arguments.pair.car.isPrimitiveProc();
     return try returnBool(decision, state);
 }
 
@@ -255,7 +223,7 @@ fn stringToSymbolProc(arguments: *Object, state: *Environment) LispError!*Object
 fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
     var res: i64 = 0;
     var args = arguments;
-    while (!(@as(ObjectType, args.*) == ObjectType.emptyList)) {
+    while (!args.isEmptyList()) {
         res += args.pair.car.fixnum;
         args = args.pair.cdr;
     }
@@ -370,11 +338,11 @@ const Environment = struct {
         var state = Self.init(allocator, null);
 
         // Insert symbols
-        _ = try state.putSymbol("quote");
-        _ = try state.putSymbol("define");
-        _ = try state.putSymbol("set!");
-        _ = try state.putSymbol("ok");
-        _ = try state.putSymbol("if");
+        try state.putSymbol("quote");
+        try state.putSymbol("define");
+        try state.putSymbol("set!");
+        try state.putSymbol("ok");
+        try state.putSymbol("if");
 
         // Add constant objects
         try state.putConstant("true", Object{ .boolean = true });
@@ -711,19 +679,17 @@ fn read(chars: []const u8, state: *Environment) !*Object {
 // =============================
 
 fn isSelfEvaluating(object: *Object) bool {
-    const objType = @as(ObjectType, object.*);
-    return (objType == ObjectType.boolean) or (objType == ObjectType.fixnum) or (objType == ObjectType.character) or (objType == ObjectType.string);
+    return object.isBoolean() or object.isFixnum() or object.isCharacter() or object.isString();
 }
 
 fn isVariable(expression: *Object) bool {
-    return @as(ObjectType, expression.*) == ObjectType.symbol;
+    return expression.isSymbol();
 }
 
 fn isTaggedList(expression: *Object, tag: *Object) bool {
-    if (@as(ObjectType, expression.*) == ObjectType.pair) {
+    if (expression.isPair()) {
         const leadSymbol = expression.pair.car;
-        const carIsSymbol = @as(ObjectType, leadSymbol.*) == ObjectType.symbol;
-        return (carIsSymbol and (leadSymbol == tag));
+        return (leadSymbol.isSymbol() and (leadSymbol == tag));
     } else {
         return false;
     }
@@ -750,8 +716,7 @@ fn isIf(expression: *Object, state: *Environment) bool {
 }
 
 fn isTrue(expression: *Object) bool {
-    const isBool = @as(ObjectType, expression.*) == ObjectType.boolean;
-    if (isBool) {
+    if (expression.isBoolean()) {
         return expression.boolean;
     } else {
         return true;
@@ -759,7 +724,7 @@ fn isTrue(expression: *Object) bool {
 }
 
 fn isApplication(expression: *Object) bool {
-    return @as(ObjectType, expression.*) == ObjectType.pair;
+    return expression.isPair();
 }
 
 fn evalIf(expression: *Object, state: *Environment) !*Object {
@@ -768,7 +733,7 @@ fn evalIf(expression: *Object, state: *Environment) !*Object {
         return expression.pair.cdr.pair.cdr.pair.car;
     } else {
         const resObj = expression.pair.cdr.pair.cdr.pair.cdr;
-        if (@as(ObjectType, resObj.*) == ObjectType.emptyList) {
+        if (resObj.isEmptyList()) {
             const obj = try state.allocator.create(Object);
             obj.* = Object{ .boolean = false };
             return obj;
@@ -797,7 +762,7 @@ fn evalDefinition(expression: *Object, state: *Environment) !*Object {
 }
 
 fn listOfValues(expressions: *Object, state: *Environment) LispError!*Object {
-    if (@as(ObjectType, expressions.*) == ObjectType.emptyList) {
+    if (expressions.isEmptyList()) {
         return Object.createEmptyList(state.allocator);
     } else {
         const car = try eval(expressions.pair.car, state);
@@ -844,7 +809,7 @@ fn eval(expression: *Object, state: *Environment) LispError!*Object {
 // =============================
 fn recurseList(pair: *const Pair, writer: std.fs.File.Writer) std.fs.File.Writer.Error!void {
     try write(pair.car, writer);
-    if (@as(ObjectType, pair.cdr.*) == ObjectType.pair) {
+    if (pair.cdr.isPair()) {
         try writer.print(" ", .{});
         try recurseList(&pair.cdr.pair, writer);
     }
