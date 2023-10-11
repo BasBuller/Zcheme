@@ -51,20 +51,84 @@ const Object = union(ObjectType) {
 
     const Self = @This();
 
-    fn createEmptyList(allocator: Allocator) ParseError!*Object {
-        const empty = try allocator.create(Object);
-        empty.* = Object{ .emptyList = true };
-        return empty;
+    // =============================
+    // Creation utilities
+    // =============================
+    fn createFixnum(num: i64, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .fixnum = num };
+        return object;
     }
 
-    fn createPair(car: *Object, cdr: *Object, allocator: Allocator) ParseError!*Object {
-        const pair = try allocator.create(Object);
-        pair.* = Object{ .pair = Pair{ .car = car, .cdr = cdr } };
-        return pair;
+    fn createBoolean(boolean: bool, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .boolean = boolean };
+        return object;
+    }
+
+    fn createCharacter(character: u8, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .character = character };
+        return object;
+    }
+
+    fn createString(string: []const u8, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .string = string };
+        return object;
+    }
+
+    fn createEmptyList(allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .emptyList = true };
+        return object;
+    }
+
+    fn createPair(car: *Object, cdr: *Object, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .pair = Pair{ .car = car, .cdr = cdr } };
+        return object;
+    }
+
+    fn createSymbol(symbol: []const u8, allocator: Allocator) LispError!*Object {
+        const object = try allocator.create(Object);
+        object.* = Object{ .symbol = symbol };
+        return object;
+    }
+
+    // =============================
+    // Type checking
+    // =============================
+    fn isFixnum(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.fixnum;
+    }
+
+    fn isBoolean(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.boolean;
+    }
+
+    fn isCharacter(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.character;
+    }
+
+    fn isString(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.string;
+    }
+
+    fn isEmptyList(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.emptyList;
     }
 
     fn isPair(self: *Self) bool {
         return @as(ObjectType, self.*) == ObjectType.pair;
+    }
+
+    fn isSymbol(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.symbol;
+    }
+
+    fn isPrimitiveProc(self: *Self) bool {
+        return @as(ObjectType, self.*) == ObjectType.primitiveProc;
     }
 };
 const Pair = struct { car: *Object, cdr: *Object };
