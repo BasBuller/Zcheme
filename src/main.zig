@@ -184,38 +184,38 @@ fn isProcedureProc(arguments: *Object, state: *Environment) LispError!*Object {
     return try returnBool(decision, state);
 }
 
-// =============================
-// Conversion procedures
-// =============================
-fn charToIntegerProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// // =============================
+// // Conversion procedures
+// // =============================
+// fn charToIntegerProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn integerToCharProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn integerToCharProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn numberToStringProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn numberToStringProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn stringToNumberProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn stringToNumberProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn symbolToStringProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn symbolToStringProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn stringToSymbolProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn stringToSymbolProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
 // =============================
 // Mathematics procedures
@@ -234,80 +234,132 @@ fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
 }
 
 fn subProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    var res: i64 = 0;
+    var args = arguments;
+    while (!args.isEmptyList()) {
+        res -= args.pair.car.fixnum;
+        args = args.pair.cdr;
+    }
+
+    const obj = try state.allocator.create(Object);
+    obj.* = Object{ .fixnum = res };
+    return obj;
 }
 
 fn mulProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    var res: i64 = 1;
+    var args = arguments;
+    while (!args.isEmptyList()) {
+        res *= args.pair.car.fixnum;
+        args = args.pair.cdr;
+    }
+
+    const obj = try state.allocator.create(Object);
+    obj.* = Object{ .fixnum = res };
+    return obj;
 }
 
 fn quotientProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    const numerator = arguments.pair.car.fixnum;
+    const denominator = arguments.pair.cdr.pair.car.fixnum;
+    const div = @divTrunc(numerator, denominator);
+    const res = try Object.createFixnum(div, state.allocator);
+    return res;
 }
 
 fn remainderProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    const numerator = arguments.pair.car.fixnum;
+    const denominator = arguments.pair.cdr.pair.car.fixnum;
+    const rem = @rem(numerator, denominator);
+    const res = try Object.createFixnum(rem, state.allocator);
+    return res;
 }
 
 fn isNumberEqualProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    var value = arguments.pair.car.fixnum;
+    var args = arguments.pair.cdr;
+    while (!args.isEmptyList()) {
+        const argVal = args.pair.car.fixnum;
+        if (value != argVal) {
+            return try state.getConstant("false");
+        }
+        args = args.pair.cdr;
+    }
+    return try state.getConstant("true");
 }
 
 fn isLessThanProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    var previous = arguments.pair.car.fixnum;
+    var next: i64 = undefined;
+    var args = arguments.pair.cdr;
+
+    while (!args.isEmptyList()) {
+        next = args.pair.car.fixnum;
+        if (previous < next) {
+            previous = next;
+        } else {
+            return try state.getConstant("false");
+        }
+    }
+    return try state.getConstant("true");
 }
 
 fn isGreaterThanProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
+    var previous = arguments.pair.car.fixnum;
+    var next: i64 = undefined;
+    var args = arguments.pair.cdr;
+
+    while (!args.isEmptyList()) {
+        next = args.pair.car.fixnum;
+        if (previous > next) {
+            previous = next;
+        } else {
+            return try state.getConstant("false");
+        }
+    }
+    return try state.getConstant("true");
 }
 
-// =============================
-// List operation procedures
-// =============================
-fn consProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// // =============================
+// // List operation procedures
+// // =============================
+// fn consProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn carProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn carProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn cdrProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn cdrProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn setCarProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn setCarProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn setCdrProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn setCdrProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-fn listProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// fn listProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
-// =============================
-// Utility procedures
-// =============================
-fn isEqProc(arguments: *Object, state: *Environment) LispError!*Object {
-    _ = state;
-    _ = arguments;
-}
+// // =============================
+// // Utility procedures
+// // =============================
+// fn isEqProc(arguments: *Object, state: *Environment) LispError!*Object {
+//     _ = state;
+//     _ = arguments;
+// }
 
 // =============================
 // State management
@@ -359,12 +411,12 @@ const Environment = struct {
         try state.addPrimitiveProc("pair?", &isPairProc);
         try state.addPrimitiveProc("procedure?", &isProcedureProc);
 
-        try state.addPrimitiveProc("char->integer", &charToIntegerProc);
-        try state.addPrimitiveProc("integer->char", &integerToCharProc);
-        try state.addPrimitiveProc("number->string", &numberToStringProc);
-        try state.addPrimitiveProc("string->number", &stringToNumberProc);
-        try state.addPrimitiveProc("symbol->string", &symbolToStringProc);
-        try state.addPrimitiveProc("string->symbol", &stringToSymbolProc);
+        // try state.addPrimitiveProc("char->integer", &charToIntegerProc);
+        // try state.addPrimitiveProc("integer->char", &integerToCharProc);
+        // try state.addPrimitiveProc("number->string", &numberToStringProc);
+        // try state.addPrimitiveProc("string->number", &stringToNumberProc);
+        // try state.addPrimitiveProc("symbol->string", &symbolToStringProc);
+        // try state.addPrimitiveProc("string->symbol", &stringToSymbolProc);
 
         try state.addPrimitiveProc("+", &addProc);
         try state.addPrimitiveProc("-", &subProc);
@@ -375,14 +427,14 @@ const Environment = struct {
         try state.addPrimitiveProc("<", &isLessThanProc);
         try state.addPrimitiveProc(">", &isGreaterThanProc);
 
-        try state.addPrimitiveProc("cons", &consProc);
-        try state.addPrimitiveProc("car", &carProc);
-        try state.addPrimitiveProc("cdr", &cdrProc);
-        try state.addPrimitiveProc("set-car!", &setCarProc);
-        try state.addPrimitiveProc("set-cdr!", &setCdrProc);
-        try state.addPrimitiveProc("list", &listProc);
+        // try state.addPrimitiveProc("cons", &consProc);
+        // try state.addPrimitiveProc("car", &carProc);
+        // try state.addPrimitiveProc("cdr", &cdrProc);
+        // try state.addPrimitiveProc("set-car!", &setCarProc);
+        // try state.addPrimitiveProc("set-cdr!", &setCdrProc);
+        // try state.addPrimitiveProc("list", &listProc);
 
-        try state.addPrimitiveProc("eq?", &isEqProc);
+        // try state.addPrimitiveProc("eq?", &isEqProc);
 
         return state;
     }
