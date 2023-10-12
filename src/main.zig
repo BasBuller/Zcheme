@@ -4,23 +4,7 @@ const Allocator = std.mem.Allocator;
 // =============================
 // Errors
 // =============================
-const ParseError = error{
-    InvalidInput,
-    BufferEnd,
-    UnterminatedString,
-    MissingClosingParanthesis,
-    InvalidCharacter,
-    Overflow,
-    OutOfMemory,
-    InvalidSymbol,
-    NotAPair,
-};
-const EvalError = error{
-    InvalidExpressionType,
-    UnboundVariable,
-    UnboundConstant,
-};
-const LispError = error{
+const ZLispError = error{
     InvalidInput,
     BufferEnd,
     UnterminatedString,
@@ -47,50 +31,50 @@ const Object = union(ObjectType) {
     emptyList: bool,
     pair: Pair,
     symbol: []const u8,
-    primitiveProc: *const fn (arguments: *Object, state: *Environment) LispError!*Object,
+    primitiveProc: *const fn (arguments: *Object, state: *Environment) ZLispError!*Object,
 
     const Self = @This();
 
     // =============================
     // Creation utilities
     // =============================
-    fn createFixnum(num: i64, allocator: Allocator) LispError!*Object {
+    fn createFixnum(num: i64, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .fixnum = num };
         return object;
     }
 
-    fn createBoolean(boolean: bool, allocator: Allocator) LispError!*Object {
+    fn createBoolean(boolean: bool, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .boolean = boolean };
         return object;
     }
 
-    fn createCharacter(character: u8, allocator: Allocator) LispError!*Object {
+    fn createCharacter(character: u8, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .character = character };
         return object;
     }
 
-    fn createString(string: []const u8, allocator: Allocator) LispError!*Object {
+    fn createString(string: []const u8, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .string = string };
         return object;
     }
 
-    fn createEmptyList(allocator: Allocator) LispError!*Object {
+    fn createEmptyList(allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .emptyList = true };
         return object;
     }
 
-    fn createPair(car: *Object, cdr: *Object, allocator: Allocator) LispError!*Object {
+    fn createPair(car: *Object, cdr: *Object, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .pair = Pair{ .car = car, .cdr = cdr } };
         return object;
     }
 
-    fn createSymbol(symbol: []const u8, allocator: Allocator) LispError!*Object {
+    fn createSymbol(symbol: []const u8, allocator: Allocator) ZLispError!*Object {
         const object = try allocator.create(Object);
         object.* = Object{ .symbol = symbol };
         return object;
@@ -136,7 +120,7 @@ const Pair = struct { car: *Object, cdr: *Object };
 // =============================
 // Typecheck procedures
 // =============================
-fn returnBool(decision: bool, state: *Environment) LispError!*Object {
+fn returnBool(decision: bool, state: *Environment) ZLispError!*Object {
     if (decision) {
         return try state.getConstant("true");
     } else {
@@ -144,42 +128,42 @@ fn returnBool(decision: bool, state: *Environment) LispError!*Object {
     }
 }
 
-fn isNullProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isNullProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isEmptyList();
     return try returnBool(decision, state);
 }
 
-fn isBooleanProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isBooleanProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isBoolean();
     return try returnBool(decision, state);
 }
 
-fn isSymbolProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isSymbolProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isSymbol();
     return try returnBool(decision, state);
 }
 
-fn isIntegerProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isIntegerProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isFixnum();
     return try returnBool(decision, state);
 }
 
-fn isCharProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isCharProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isCharacter();
     return try returnBool(decision, state);
 }
 
-fn isStringProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isStringProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isString();
     return try returnBool(decision, state);
 }
 
-fn isPairProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isPairProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isPair();
     return try returnBool(decision, state);
 }
 
-fn isProcedureProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isProcedureProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const decision = arguments.pair.car.isPrimitiveProc();
     return try returnBool(decision, state);
 }
@@ -220,7 +204,7 @@ fn isProcedureProc(arguments: *Object, state: *Environment) LispError!*Object {
 // =============================
 // Mathematics procedures
 // =============================
-fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn addProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var res: i64 = 0;
     var args = arguments;
     while (!args.isEmptyList()) {
@@ -233,7 +217,7 @@ fn addProc(arguments: *Object, state: *Environment) LispError!*Object {
     return obj;
 }
 
-fn subProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn subProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var res: i64 = 0;
     var args = arguments;
     while (!args.isEmptyList()) {
@@ -246,7 +230,7 @@ fn subProc(arguments: *Object, state: *Environment) LispError!*Object {
     return obj;
 }
 
-fn mulProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn mulProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var res: i64 = 1;
     var args = arguments;
     while (!args.isEmptyList()) {
@@ -259,7 +243,7 @@ fn mulProc(arguments: *Object, state: *Environment) LispError!*Object {
     return obj;
 }
 
-fn quotientProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn quotientProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const numerator = arguments.pair.car.fixnum;
     const denominator = arguments.pair.cdr.pair.car.fixnum;
     const div = @divTrunc(numerator, denominator);
@@ -267,7 +251,7 @@ fn quotientProc(arguments: *Object, state: *Environment) LispError!*Object {
     return res;
 }
 
-fn remainderProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn remainderProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     const numerator = arguments.pair.car.fixnum;
     const denominator = arguments.pair.cdr.pair.car.fixnum;
     const rem = @rem(numerator, denominator);
@@ -275,7 +259,7 @@ fn remainderProc(arguments: *Object, state: *Environment) LispError!*Object {
     return res;
 }
 
-fn isNumberEqualProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isNumberEqualProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var value = arguments.pair.car.fixnum;
     var args = arguments.pair.cdr;
     while (!args.isEmptyList()) {
@@ -288,7 +272,7 @@ fn isNumberEqualProc(arguments: *Object, state: *Environment) LispError!*Object 
     return try state.getConstant("true");
 }
 
-fn isLessThanProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isLessThanProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var previous = arguments.pair.car.fixnum;
     var next: i64 = undefined;
     var args = arguments.pair.cdr;
@@ -304,7 +288,7 @@ fn isLessThanProc(arguments: *Object, state: *Environment) LispError!*Object {
     return try state.getConstant("true");
 }
 
-fn isGreaterThanProc(arguments: *Object, state: *Environment) LispError!*Object {
+fn isGreaterThanProc(arguments: *Object, state: *Environment) ZLispError!*Object {
     var previous = arguments.pair.car.fixnum;
     var next: i64 = undefined;
     var args = arguments.pair.cdr;
@@ -439,11 +423,6 @@ const Environment = struct {
         return state;
     }
 
-    fn ensureTotalCapacity(self: *Self, symbolCapacity: u32, variableCapacity: u32) !void {
-        try self.symbolLut.ensureTotalCapacity(symbolCapacity);
-        try self.variableLut.ensureTotalCapacity(variableCapacity);
-    }
-
     fn deinit(self: *Self) void {
         // Variables
         var valueIterator = self.variableLut.valueIterator();
@@ -460,6 +439,7 @@ const Environment = struct {
         }
         self.symbolLut.deinit();
 
+        // Constants
         var constantIterator = self.constantLut.keyIterator();
         while (constantIterator.next()) |key| {
             self.allocator.free(key.*);
@@ -467,6 +447,7 @@ const Environment = struct {
         self.constantLut.deinit();
     }
 
+    // Constants
     fn putConstant(self: *Self, constantName: []const u8, object: Object) !void {
         const constantKey = try self.allocator.alloc(u8, constantName.len);
         @memcpy(constantKey, constantName);
@@ -480,11 +461,12 @@ const Environment = struct {
             if (self.constantLut.getPtr(constantName)) |objPtr| {
                 return objPtr;
             } else {
-                return EvalError.UnboundConstant;
+                return ZLispError.UnboundConstant;
             }
         }
     }
 
+    // Variables
     fn putVariable(self: *Self, symbolName: []const u8, object: *Object) !void {
         const symbol = try self.getInsertSymbol(symbolName);
         try self.variableLut.put(symbol, object);
@@ -518,8 +500,7 @@ const Environment = struct {
         }
     }
 
-    /// Puts the key string on the heap, then creates symbol lut entry based on pointed to the key string on the heap.
-    /// Reason for first storing key on the heap is that otherwise there is a mutating reference to the array used for storing IO.
+    // Symbols
     fn putSymbol(self: *Self, symbolName: []const u8) !void {
         const symbolKey = try self.allocator.alloc(u8, symbolName.len);
         @memcpy(symbolKey, symbolName);
@@ -539,19 +520,19 @@ const Environment = struct {
         return self.getSymbol(symbolName).?;
     }
 
-    fn addPrimitiveProc(self: *Self, procName: []const u8, proc: *const fn (arguments: *Object, state: *Environment) LispError!*Object) !void {
-        const addObject = try self.allocator.create(Object);
-        addObject.* = Object{ .primitiveProc = proc };
-        try self.putVariable(procName, addObject);
-    }
-
-    // Utils
     fn printSymbols(self: *Self, writer: std.fs.File.Writer) !void {
         var iter = self.symbolLut.iterator();
         try writer.print("\n", .{});
         while (iter.next()) |entry| {
             try writer.print("key: {s}[{*}] --- value: {s}[{*}]\n", .{ entry.key_ptr.*, entry.key_ptr, entry.value_ptr.*.symbol, entry.value_ptr });
         }
+    }
+
+    // Procedures
+    fn addPrimitiveProc(self: *Self, procName: []const u8, proc: *const fn (arguments: *Object, state: *Environment) ZLispError!*Object) !void {
+        const addObject = try self.allocator.create(Object);
+        addObject.* = Object{ .primitiveProc = proc };
+        try self.putVariable(procName, addObject);
     }
 };
 
@@ -579,7 +560,7 @@ fn eatWhitespace(slice: []const u8) []const u8 {
     return slice[idx..];
 }
 
-fn readCharacter(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readCharacter(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     const object = try state.allocator.create(Object);
 
     var resString: []const u8 = undefined;
@@ -594,7 +575,7 @@ fn readCharacter(chars: []const u8, state: *Environment) LispError!ParseResult {
         },
         '\\' => {
             if (chars.len < 6) {
-                return ParseError.BufferEnd;
+                return ZLispError.BufferEnd;
             } else if (std.mem.eql(u8, chars[1..6], "space")) {
                 object.* = .{ .character = ' ' };
                 resString = chars[5..];
@@ -602,15 +583,15 @@ fn readCharacter(chars: []const u8, state: *Environment) LispError!ParseResult {
                 object.* = .{ .character = '\n' };
                 resString = chars[8..];
             } else {
-                return ParseError.InvalidCharacter;
+                return ZLispError.InvalidCharacter;
             }
         },
-        else => return ParseError.InvalidInput,
+        else => return ZLispError.InvalidInput,
     }
     return ParseResult{ .object = object, .remainderString = resString };
 }
 
-fn readFixnum(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readFixnum(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and std.ascii.isDigit(chars[idx])) {
         idx += 1;
@@ -623,7 +604,7 @@ fn readFixnum(chars: []const u8, state: *Environment) LispError!ParseResult {
 }
 
 /// Read characters between closing double quotes, while handling \n and \" espace sequences
-fn readString(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readString(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     var escapeOn: bool = false;
     var idx: usize = 0;
     while ((chars[idx] != '"') or escapeOn) {
@@ -633,7 +614,7 @@ fn readString(chars: []const u8, state: *Environment) LispError!ParseResult {
             escapeOn = false;
         }
         idx += 1;
-        if (idx == chars.len) return ParseError.UnterminatedString;
+        if (idx == chars.len) return ZLispError.UnterminatedString;
     }
 
     const object = try state.allocator.create(Object);
@@ -641,7 +622,7 @@ fn readString(chars: []const u8, state: *Environment) LispError!ParseResult {
     return ParseResult{ .object = object, .remainderString = chars[idx..] };
 }
 
-fn readSymbol(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readSymbol(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     var idx: usize = 1;
     while ((idx < chars.len) and
         (isInitial(chars[idx]) or std.ascii.isDigit(chars[idx]) or (chars[idx] == '+') or (chars[idx] == '-')))
@@ -655,11 +636,11 @@ fn readSymbol(chars: []const u8, state: *Environment) LispError!ParseResult {
         const symbol = try state.getInsertSymbol(chars[0..idx]);
         return ParseResult{ .object = symbol, .remainderString = chars[idx..] };
     } else {
-        return ParseError.InvalidSymbol;
+        return ZLispError.InvalidSymbol;
     }
 }
 
-fn readQuotedList(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readQuotedList(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     const quote = try state.getInsertSymbol("quote");
     const objRes = try readObject(chars, state);
     const emptyList = try state.getConstant("emptyList");
@@ -669,7 +650,7 @@ fn readQuotedList(chars: []const u8, state: *Environment) LispError!ParseResult 
     return res;
 }
 
-fn readPair(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readPair(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     if (chars[0] == ')') {
         const object = try Object.createEmptyList(state.allocator);
         return ParseResult{ .object = object, .remainderString = chars[1..] };
@@ -682,13 +663,13 @@ fn readPair(chars: []const u8, state: *Environment) LispError!ParseResult {
     // Deal with whitespace and optional dot
     var varChars = eatWhitespace(parseRes.remainderString);
     if (varChars.len == 0) {
-        return ParseError.MissingClosingParanthesis;
+        return ZLispError.MissingClosingParanthesis;
     }
 
     var cdr: *Object = undefined;
     if (varChars[0] == '.') varChars = eatWhitespace(varChars[1..]);
     if (varChars.len == 0) {
-        return ParseError.MissingClosingParanthesis;
+        return ZLispError.MissingClosingParanthesis;
     } else if (varChars[0] == ')') {
         cdr = try Object.createEmptyList(state.allocator);
         varChars = varChars[1..];
@@ -702,7 +683,7 @@ fn readPair(chars: []const u8, state: *Environment) LispError!ParseResult {
     return ParseResult{ .object = object, .remainderString = varChars };
 }
 
-fn readObject(chars: []const u8, state: *Environment) LispError!ParseResult {
+fn readObject(chars: []const u8, state: *Environment) ZLispError!ParseResult {
     var varChars = eatWhitespace(chars);
     if (varChars[0] == '#') {
         return readCharacter(varChars[1..], state);
@@ -717,7 +698,7 @@ fn readObject(chars: []const u8, state: *Environment) LispError!ParseResult {
     } else if (varChars[0] == '\'') {
         return readQuotedList(varChars[1..], state);
     } else {
-        return ParseError.InvalidInput;
+        return ZLispError.InvalidInput;
     }
 }
 
@@ -729,7 +710,6 @@ fn read(chars: []const u8, state: *Environment) !*Object {
 // =============================
 // Evaluate
 // =============================
-
 fn isSelfEvaluating(object: *Object) bool {
     return object.isBoolean() or object.isFixnum() or object.isCharacter() or object.isString();
 }
@@ -802,7 +782,7 @@ fn evalAssignment(expression: *Object, state: *Environment) !*Object {
         res.* = value.*;
         return state.getSymbol("ok").?;
     } else {
-        return EvalError.UnboundVariable;
+        return ZLispError.UnboundVariable;
     }
 }
 
@@ -813,7 +793,7 @@ fn evalDefinition(expression: *Object, state: *Environment) !*Object {
     return state.getSymbol("ok").?;
 }
 
-fn listOfValues(expressions: *Object, state: *Environment) LispError!*Object {
+fn listOfValues(expressions: *Object, state: *Environment) ZLispError!*Object {
     if (expressions.isEmptyList()) {
         return Object.createEmptyList(state.allocator);
     } else {
@@ -823,13 +803,13 @@ fn listOfValues(expressions: *Object, state: *Environment) LispError!*Object {
     }
 }
 
-fn evalApplication(expression: *Object, state: *Environment) LispError!*Object {
+fn evalApplication(expression: *Object, state: *Environment) ZLispError!*Object {
     const procedure = try eval(expression.pair.car, state);
     const arguments = try listOfValues(expression.pair.cdr, state);
     return procedure.primitiveProc(arguments, state);
 }
 
-fn eval(expression: *Object, state: *Environment) LispError!*Object {
+fn eval(expression: *Object, state: *Environment) ZLispError!*Object {
     var expr = expression;
     while (true) {
         if (isSelfEvaluating(expr)) {
@@ -838,7 +818,7 @@ fn eval(expression: *Object, state: *Environment) LispError!*Object {
             if (state.getVariable(expr.symbol)) |res| {
                 return res;
             } else {
-                return EvalError.UnboundVariable;
+                return ZLispError.UnboundVariable;
             }
         } else if (isQuoted(expr, state)) {
             return expr.pair.cdr.pair.car;
@@ -851,7 +831,7 @@ fn eval(expression: *Object, state: *Environment) LispError!*Object {
         } else if (isApplication(expr)) {
             return evalApplication(expr, state);
         } else {
-            return EvalError.InvalidExpressionType;
+            return ZLispError.InvalidExpressionType;
         }
     }
 }
